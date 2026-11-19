@@ -32,8 +32,13 @@ be served over http.
 - **Move the pieces** — click a checker, then click one of the highlighted
   points (the gold badges show which die is used). Click the tray to bear off.
 - Play **against the computer** (default) or **two players** on one screen.
-- **Undo** your moves during your own turn, hit `Esc` to deselect, `N` for a new
-  game. Sound can be muted with the ♪ button.
+- **New game** — the **New game** button, `N`, or *New game* on the win overlay.
+  Every new game **draws a side at random**: you get White or Black with a 50/50
+  chance and the computer takes the other. The draw is announced in the toast,
+  tagged `you` on your pip row, and shown in the turn chip; when you draw Black
+  the computer opens for White, so you can never roll out of turn.
+- **Undo** your moves during your own turn, hit `Esc` to deselect. Sound can be
+  muted with the ♪ button.
 
 ## Rules implemented
 

@@ -151,7 +151,12 @@ function toast(msg, ms = 1800) {
 
 /* ---------------------------------------------------------------- flow */
 
-function newGame() {
+/* a fresh game gives you a 50/50 draw for the side you play */
+function drawSide() {
+  return Math.random() < 0.5 ? R.WHITE : R.BLACK;
+}
+
+function newGame(opts = {}) {
   G.seq++;
   G.state = R.createInitialState();
   G.phase = 'roll';
@@ -162,10 +167,18 @@ function newGame() {
   G.diceQuats = [null, null];
   G.undo = [];
   G.hover = null;
+  const asked = opts.side === R.WHITE || opts.side === R.BLACK ? opts.side : null;
+  G.human = asked === null ? drawSide() : asked;
   hideOverlay();
   syncOptions();
   updateUI();
+  announceSide();
   maybeAI();
+}
+
+function announceSide() {
+  if (G.mode !== 'ai') return;
+  toast(`You play ${R.nameOf(G.human)}`, 2400);
 }
 
 function rollDice() {
@@ -354,10 +367,17 @@ function completeTurnShortly() {
 function endGame(winner) {
   const kind = R.winKind(G.state, winner);
   const pts = kind === 'single' ? 1 : kind === 'gammon' ? 2 : 3;
-  el.overlayTitle.textContent = `${R.nameOf(winner)} wins`;
-  el.overlaySub.textContent = kind === 'single'
+  const score = kind === 'single'
     ? 'A clean single game.'
     : `${kind === 'gammon' ? 'Gammon' : 'Backgammon'} — worth ${pts} points.`;
+  if (G.mode === 'ai') {
+    const youWon = winner === G.human;
+    el.overlayTitle.textContent = youWon ? 'You win' : 'Computer wins';
+    el.overlaySub.textContent = `${R.nameOf(winner)} takes it. ${score} You played ${R.nameOf(G.human)}.`;
+  } else {
+    el.overlayTitle.textContent = `${R.nameOf(winner)} wins`;
+    el.overlaySub.textContent = score;
+  }
   el.overlay.classList.remove('hidden');
   sfx('win');
   updateUI();
@@ -548,12 +568,20 @@ function updateUI() {
   if (G.phase === 'over') {
     title = 'Game over';
     sub = 'Press New to play again';
+  } else if (G.mode === 'ai') {
+    if (turn === G.human) {
+      title = `Your turn · ${R.nameOf(G.human)}`;
+      sub = G.phase === 'roll' ? 'Roll the dice' : 'Move a checker';
+    } else {
+      title = `Computer · ${R.nameOf(turn)}`;
+      sub = G.phase === 'roll' ? 'Rolling soon…' : 'Playing…';
+    }
   } else if (turn === R.WHITE) {
-    title = G.mode === 'ai' ? 'Your turn' : "White's turn";
+    title = "White's turn";
     sub = G.phase === 'roll' ? 'Roll the dice' : 'Move a checker';
   } else {
-    title = G.mode === 'ai' ? 'Computer' : "Black's turn";
-    sub = G.phase === 'roll' ? 'Rolling soon…' : 'Playing…';
+    title = "Black's turn";
+    sub = G.phase === 'roll' ? 'Roll the dice' : 'Move a checker';
   }
   if (G.busy && G.phase === 'move' && !isHuman()) sub = 'Thinking…';
   el.turnText.textContent = title;
@@ -590,6 +618,8 @@ function updateUI() {
   el.pipB.textContent = R.pipCount(st, R.BLACK);
   el.pipW.parentElement.classList.toggle('active', turn === R.WHITE);
   el.pipB.parentElement.classList.toggle('active', turn === R.BLACK);
+  el.pipW.parentElement.classList.toggle('you', G.mode === 'ai' && G.human === R.WHITE);
+  el.pipB.parentElement.classList.toggle('you', G.mode === 'ai' && G.human === R.BLACK);
 
   el.undoBtn.disabled = !(G.undo.length > 0 && isHuman() && !G.busy && G.phase === 'move');
   el.modeBtn.textContent = G.mode === 'ai' ? 'vs Computer' : 'Two players';
@@ -711,9 +741,8 @@ if (window.ResizeObserver) {
 }
 
 resize();
-syncOptions();
-updateUI();
+newGame();          // first game also draws a side
 requestAnimationFrame(frame);
 
 // handy for debugging from the console
-window.__bg = { G, R, renderer, newGame, rollDice };
+window.__bg = { G, R, renderer, newGame, rollDice, drawSide };

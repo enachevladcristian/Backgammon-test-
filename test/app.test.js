@@ -13,6 +13,10 @@ assert.ok(app, 'app exposed its debug handle');
 const { G, renderer } = app;
 const R = app.R;
 
+// the side you play is drawn at random on every new game, so pin it here to
+// keep the rest of the suite deterministic
+app.newGame({ side: R.WHITE });
+
 let passed = 0;
 function test(name, fn) {
   fn();
@@ -68,7 +72,9 @@ test('project / unproject round trip', () => {
 test('roll button rolls the dice', () => {
   dom.el('rollBtn').dispatch('click', {});
   assert.equal(G.phase, 'move');
-  assert.equal(G.state.dice.length, 2);
+  // a double is four playable dice
+  assert.ok(G.state.dice.length === 2 || G.state.dice.length === 4, 'two dice, or four on a double');
+  assert.ok(G.state.dice.every((d) => d.v >= 1 && d.v <= 6));
   dom.step(16, 60); // let the dice land
   assert.equal(G.roll, null);
   assert.equal(G.busy, false);
@@ -135,7 +141,7 @@ test('board clicks outside the points are ignored safely', () => {
 });
 
 test('game-to-game reset works', () => {
-  app.newGame();
+  app.newGame({ side: R.WHITE });
   assert.equal(G.phase, 'roll');
   assert.equal(G.state.turn, R.WHITE);
   assert.equal(R.countAt(G.state, 24), 2);
@@ -170,8 +176,63 @@ test('win overlay renders', () => {
   G.state.off = [15, 3];
   dom.step(16, 3);
   assert.equal(dom.el('overlay').classList.contains('hidden'), true, 'overlay only shows via endGame()');
-  app.newGame();
+  app.newGame({ side: R.WHITE });
   dom.step(16, 2);
 });
+
+test('a new game draws a side at random, about half for each colour', () => {
+  const realRandom = Math.random;
+  const draws = [];
+  try {
+    // walk the draws across the whole 0..1 range
+    for (let i = 0; i < 20; i++) {
+      Math.random = () => (i + 0.5) / 20;
+      app.newGame();
+      draws.push(G.human);
+    }
+  } finally {
+    Math.random = realRandom;
+  }
+  assert.equal(draws.filter((s) => s === R.WHITE).length, 10, 'lower half of the range is White');
+  assert.equal(draws.filter((s) => s === R.BLACK).length, 10, 'upper half is Black');
+  assert.ok(new Set(draws).size === 2, 'both sides come up');
+});
+
+test('an explicit side pins the draw, the pip card tags it', () => {
+  // the mock gives every element the same parent, so build the two pip rows
+  const doc = globalThis.document;
+  const wRow = doc.createElement('div');
+  const bRow = doc.createElement('div');
+  wRow.appendChild(dom.el('pipW'));
+  bRow.appendChild(dom.el('pipB'));
+
+  app.newGame({ side: R.BLACK });
+  assert.equal(G.human, R.BLACK);
+  assert.equal(dom.el('toast').textContent, 'You play Black', 'the draw is announced');
+  assert.equal(wRow.classList.contains('you'), false);
+  assert.equal(bRow.classList.contains('you'), true, 'black row is tagged');
+
+  app.newGame({ side: R.WHITE });
+  assert.equal(G.human, R.WHITE);
+  assert.equal(wRow.classList.contains('you'), true, 'white row is tagged');
+  assert.equal(bRow.classList.contains('you'), false);
+});
+
+// the mock DOM only fakes rAF and performance.now; setTimeout is real, so the
+// computer's think time has to be waited out for real here
+{
+  const name = 'drawing black lets the computer open the game';
+  app.newGame({ side: R.BLACK });
+  assert.equal(G.state.turn, R.WHITE, 'white always opens');
+  assert.equal(G.mode, 'ai');
+  assert.equal(dom.el('rollBtn').disabled, true, 'you cannot roll for the computer');
+  assert.equal(dom.el('turnText').textContent, 'Computer · White');
+  await new Promise((r) => setTimeout(r, 820));
+  assert.equal(G.phase, 'move', 'computer rolled for itself');
+  assert.ok(G.state.dice.length >= 2, 'dice are in play');
+  app.newGame({ side: R.WHITE });
+  passed++;
+  console.log(`  ok  ${name}`);
+}
 
 console.log(`\n${passed} checks passed.\n`);

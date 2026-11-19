@@ -34,7 +34,7 @@
       <button class="btn" id="modeBtn" title="Toggle opponent">vs Computer</button>
       <button class="btn" id="undoBtn" title="Undo last move">Undo</button>
       <button class="btn icon" id="soundBtn" aria-pressed="true" title="Sound on/off">&#9834;</button>
-      <button class="btn" id="newBtn" title="Start a new game (N)">New game</button>
+      <button class="btn" id="newBtn" title="New game — you draw a side (N)">New game</button>
     </nav>
   </header>
 
@@ -42,11 +42,13 @@
     <div class="pip-row">
       <span class="pip-dot white"></span>
       <span class="pip-name">White</span>
+      <span class="you-tag">you</span>
       <span class="pip-val" id="pipW">167</span>
     </div>
     <div class="pip-row">
       <span class="pip-dot black"></span>
       <span class="pip-name">Black</span>
+      <span class="you-tag">you</span>
       <span class="pip-val" id="pipB">167</span>
     </div>
     <div class="pip-hint" id="hint"></div>
@@ -64,7 +66,7 @@
       <div class="card-mark">&#9861;</div>
       <h2 id="overlayTitle">White wins</h2>
       <p id="overlaySub">A clean single game.</p>
-      <button class="btn primary" id="overlayBtn">Play again</button>
+      <button class="btn primary" id="overlayBtn">New game</button>
     </div>
   </div>
 </div>

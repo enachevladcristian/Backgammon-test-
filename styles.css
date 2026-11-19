@@ -223,6 +223,21 @@ body { overscroll-behavior: none; }
 .pip-dot.white { background: linear-gradient(160deg, #fffdf6, #cfc0a0); }
 .pip-dot.black { background: linear-gradient(160deg, #55525f, #17161c); }
 
+.you-tag {
+  display: none;
+  font-size: 9.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 999px;
+  color: var(--gold-hi);
+  background: rgba(216, 178, 106, 0.16);
+  border: 1px solid rgba(216, 178, 106, 0.3);
+  line-height: 1;
+}
+
+.pip-row.you .you-tag { display: inline-block; }
+
 .pip-name {
   font-size: 11.5px;
   letter-spacing: 0.09em;
