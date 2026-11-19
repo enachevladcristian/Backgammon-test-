@@ -373,7 +373,9 @@ export class Renderer {
     const availW0 = Math.max(80, this.w - padX * 2);
     const availH0 = Math.max(80, this.h - padTop - padBottom);
     // wide viewports get a lower camera so the board can grow
-    cam.elev = clamp(1.02 - 0.18 * (availW0 / availH0 - 1.25), 0.74, 1.02);
+    // wide viewports: lower camera (more drama); tall/narrow ones: closer to
+    // top-down, which shows more of the board on a phone screen
+    cam.elev = clamp(1.02 - 0.18 * (availW0 / availH0 - 1.25), 0.74, 1.16);
     cam.trig();
     cam.cx = 0;
     cam.cy = 0;
