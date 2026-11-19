@@ -1,0 +1,11 @@
+{
+  "name": "backgammon-25d",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Backgammon in the browser with 2.5D graphics — no dependencies, no build step.",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node test/rules.test.js && node test/ai.test.js && node test/app.test.js"
+  }
+}
