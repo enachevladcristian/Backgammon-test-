@@ -12,13 +12,14 @@ const TAU = Math.PI * 2;
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 
 export const BOARD = {
-  X0: -6, X1: 6, Y0: -4.5, Y1: 4.5,      // play field
-  BAR_HW: 0.5,
-  FELT_X0: -6.5, FELT_X1: 7.95,
-  FELT_Y0: -5.0, FELT_Y1: 5.0,
+  // play field: 6 columns | vertical bar | 6 columns, points meet at y = 0
+  X0: -6.42, X1: 6.42, Y0: -4, Y1: 4,
+  BAR_HW: 0.42,
+  FELT_X0: -7.0, FELT_X1: 8.35,
+  FELT_Y0: -4.45, FELT_Y1: 4.45,
   RAIL: 0.62,
   THICK: 0.95,
-  TRAY_X0: 6.18, TRAY_X1: 7.82,
+  TRAY_X0: 6.82, TRAY_X1: 8.25,
   R: 0.42,          // checker radius
   CH: 0.2,          // checker thickness
   CSTEP: 0.172,     // vertical step between stacked checkers
@@ -33,8 +34,8 @@ BOARD.CX = (BOARD.OUT_X0 + BOARD.OUT_X1) / 2;
 
 /* dice rest in front of the board, on the table */
 export const DICE_REST = [
-  { x: 0.15, y: -6.32 },
-  { x: 1.45, y: -6.16 },
+  { x: 0.1, y: -5.98 },
+  { x: 1.4, y: -5.84 },
 ];
 
 const COL = {
@@ -117,43 +118,56 @@ export class Camera {
 export function colIndex(p) {
   return p <= 12 ? 12 - p : p - 13;
 }
+/** centre x of a column (0..5 left of the bar, 6..11 right of it) */
+export function colX(c) {
+  const b = BOARD;
+  return c < 6 ? b.X0 + c + 0.5 : b.BAR_HW + c - 5.5;
+}
 export function pointX(p) {
-  return BOARD.X0 + colIndex(p) + 0.5;
+  return colX(colIndex(p));
 }
 export function pointY(p) {
-  return p <= 12 ? BOARD.Y0 + BOARD.R + 0.07 : BOARD.Y1 - BOARD.R - 0.07;
+  return p <= 12 ? BOARD.Y0 + BOARD.R + 0.08 : BOARD.Y1 - BOARD.R - 0.08;
 }
 export function stackTop(count) {
   return count * BOARD.CSTEP;
 }
-export function barX(player) {
-  return player === 0 ? -1.15 : 1.15;
+/** checkers on the bar pile up on the raised strip, each side of the middle */
+export function barPos(player, index = 0) {
+  return { x: 0, y: player === 0 ? -2.05 : 2.05, z: BOARD.BAR_TOP + index * BOARD.CSTEP };
 }
 export function offPos(player, i) {
   const slots = Math.min(14, i);
   const order = [1, 0, 2];
   const col = order[Math.floor(slots / 5)];
   const row = slots % 5;
-  const x = 7.0 + (col - 1) * 0.54;
-  const y = player === 0 ? -4.28 + row * 0.78 : 4.28 - row * 0.78;
+  const x = 7.535 + (col - 1) * 0.48;
+  const y = player === 0 ? -3.95 + row * 0.75 : 3.95 - row * 0.75;
   return { x, y, z: 0.006 };
+}
+/** column under a board x coordinate, or -1 when outside / on the bar */
+export function colAt(x) {
+  const b = BOARD;
+  if (x < b.X0 || x > b.X1) return -1;
+  if (x < -b.BAR_HW) return clamp(Math.floor(x - b.X0), 0, 5);
+  if (x > b.BAR_HW) return 6 + clamp(Math.floor(x - b.BAR_HW), 0, 5);
+  return -1;
 }
 
 export function hitTest(world) {
   if (!world) return null;
   const { x, y } = world;
   const b = BOARD;
-  if (x > b.TRAY_X0 - 0.1 && x < b.TRAY_X1 + 0.15 && Math.abs(y) < b.Y1 + 0.3) {
+  if (x > b.TRAY_X0 - 0.12 && x < b.TRAY_X1 + 0.22 && Math.abs(y) < b.Y1 + 0.3) {
     return { kind: 'off' };
   }
-  if (Math.abs(y) <= b.BAR_HW && x >= b.X0 - 0.2 && x <= b.X1 + 0.2) {
+  if (Math.abs(x) <= b.BAR_HW + 0.04 && Math.abs(y) <= b.Y1 + 0.25) {
     return { kind: 'bar' };
   }
-  if (x < b.X0 - 0.45 || x > b.X1 + 0.45) return null;
-  const col = clamp(Math.floor(x - b.X0), 0, 11);
-  if (y > b.BAR_HW && y < b.Y1 + 0.55) return { kind: 'point', p: 13 + col };
-  if (y < -b.BAR_HW && y > b.Y0 - 0.55) return { kind: 'point', p: 12 - col };
-  return null;
+  if (Math.abs(y) > b.Y1 + 0.5) return null;
+  const col = colAt(x);
+  if (col < 0) return null;
+  return { kind: 'point', p: y > 0 ? 13 + col : 12 - col };
 }
 
 /* --------------------------------------------------------------- 2d utils */
@@ -377,11 +391,14 @@ export class Renderer {
     push(b.X1 - 0.5, b.Y0, 1.6);
     push(b.X0 + 0.5, b.Y1, 1.6);
     push(b.X1 - 0.5, b.Y1, 1.6);
-    push(7.2, -4.4, 1.2);
-    push(7.2, 4.4, 1.2);
+    push(7.9, -4.2, 1.2);
+    push(7.9, 4.2, 1.2);
+    // bar towers
+    push(0, -2.05, 1.9);
+    push(0, 2.05, 1.9);
     // dice in front
-    push(-0.4, -7.2, -b.THICK);
-    push(1.75, -7.2, -b.THICK);
+    push(-0.5, -6.9, -b.THICK);
+    push(1.9, -6.9, -b.THICK);
 
     const bb = bbox(samples);
     const bw = bb.x1 - bb.x0 || 1;
@@ -588,8 +605,8 @@ export class Renderer {
     const b = BOARD;
     const x0 = b.TRAY_X0;
     const x1 = b.TRAY_X1;
-    const y0 = b.FELT_Y0 + 0.5;
-    const y1 = b.FELT_Y1 - 0.5;
+    const y0 = b.FELT_Y0 + 0.28;
+    const y1 = b.FELT_Y1 - 0.28;
     const z = 0.006;
     const pts = this.poly3(ctx, [[x0, y0, z], [x1, y0, z], [x1, y1, z], [x0, y1, z]]);
     trace(ctx, pts);
@@ -613,17 +630,27 @@ export class Renderer {
     ctx.lineWidth = 1;
     ctx.stroke();
 
-    // divider between the two trays (mid board)
-    const a = this.p(x0 - 0.16, y0, 0.004);
-    const c = this.p(x0 - 0.16, y1, 0.004);
+    // divider between white's (bottom) and black's (top) tray
+    const a = this.p(x0, 0, 0.004);
+    const c = this.p(x1, 0, 0.004);
     ctx.beginPath();
     ctx.moveTo(a.x, a.y);
     ctx.lineTo(c.x, c.y);
-    ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+    ctx.strokeStyle = 'rgba(0,0,0,0.35)';
     ctx.lineWidth = 2;
     ctx.stroke();
-    ctx.strokeStyle = 'rgba(216,178,106,0.10)';
+    ctx.strokeStyle = 'rgba(216,178,106,0.12)';
     ctx.lineWidth = 1;
+    ctx.stroke();
+
+    // separator line between the two halves of the board
+    const s0 = this.p(-6.9, 0, 0.004);
+    const s1 = this.p(6.6, 0, 0.004);
+    ctx.beginPath();
+    ctx.moveTo(s0.x, s0.y);
+    ctx.lineTo(s1.x, s1.y);
+    ctx.strokeStyle = 'rgba(0,0,0,0.22)';
+    ctx.lineWidth = 1.2;
     ctx.stroke();
   }
 
@@ -631,11 +658,11 @@ export class Renderer {
     const b = BOARD;
     for (let p = 1; p <= 24; p++) {
       const bottom = p <= 12;
-      const x0 = b.X0 + colIndex(p);
-      const x1 = x0 + 1;
-      const xc = (x0 + x1) / 2;
+      const xc = colX(colIndex(p));
+      const x0 = xc - 0.5;
+      const x1 = xc + 0.5;
       const baseY = bottom ? b.Y0 : b.Y1;
-      const apexY = bottom ? -b.BAR_HW : b.BAR_HW;
+      const apexY = 0;
       const z = 0.008;
       const tri = this.poly3(ctx, [[x0, baseY, z], [x1, baseY, z], [xc, apexY, z]]);
       const isRed = colIndex(p) % 2 === 1;
@@ -655,12 +682,12 @@ export class Renderer {
 
       // subtle specular sheen on the left flank
       const sheen = this.poly3(ctx, [
-        [x0, baseY, z],
-        [xc, apexY, z],
-        [x0 + 0.34, baseY, z],
+        [x0 + 0.02, baseY, z],
+        [xc - 0.06, apexY, z],
+        [x0 + 0.2, baseY, z],
       ]);
       trace(ctx, sheen);
-      ctx.fillStyle = 'rgba(255,255,255,0.07)';
+      ctx.fillStyle = 'rgba(255,255,255,0.05)';
       ctx.fill();
     }
   }
@@ -668,57 +695,68 @@ export class Renderer {
   drawBar(ctx) {
     const b = BOARD;
     const zt = b.BAR_TOP;
-    const x0 = b.FELT_X0;
-    const x1 = b.FELT_X1;
-    const y0 = -b.BAR_HW;
-    const y1 = b.BAR_HW;
+    const x0 = -b.BAR_HW;
+    const x1 = b.BAR_HW;
+    const y0 = b.OUT_Y0;
+    const y1 = b.OUT_Y1;
 
-    // shadow the bar drops on the felt
-    for (const [yy, dir] of [[y0 - 0.16, -1], [y1 + 0.16, 1]]) {
+    // soft shadow the raised bar casts on the felt on both sides
+    for (const side of [-1, 1]) {
+      const edge = side < 0 ? x0 : x1;
       for (let i = 0; i < 3; i++) {
-        const d = 0.06 + i * 0.09;
+        const a = edge + side * (0.01 + i * 0.1);
+        const c = a + side * 0.1;
         const band = this.poly3(ctx, [
-          [x0, yy + dir * d, 0.006], [x1, yy + dir * d, 0.006],
-          [x1, yy + dir * (d + 0.1), 0.006], [x0, yy + dir * (d + 0.1), 0.006],
+          [a, b.FELT_Y0, 0.006], [c, b.FELT_Y0, 0.006],
+          [c, b.FELT_Y1, 0.006], [a, b.FELT_Y1, 0.006],
         ]);
         trace(ctx, band);
-        ctx.fillStyle = `rgba(0,0,0,${0.13 - i * 0.035})`;
+        ctx.fillStyle = `rgba(0,0,0,${0.18 - i * 0.055})`;
         ctx.fill();
       }
     }
 
-    // front face
+    // the two long side faces
+    for (const [x, col] of [[x0, '#432510'], [x1, '#4d2b14']]) {
+      const face = this.poly3(ctx, [[x, y0, zt], [x, y1, zt], [x, y1, 0.008], [x, y0, 0.008]]);
+      trace(ctx, face);
+      ctx.fillStyle = col;
+      ctx.fill();
+    }
+
+    // near end face
     const front = this.poly3(ctx, [[x0, y0, zt], [x1, y0, zt], [x1, y0, 0.008], [x0, y0, 0.008]]);
     let bb = bbox(front);
     let g = ctx.createLinearGradient(bb.x0, bb.y0, bb.x0, bb.y1);
-    g.addColorStop(0, '#9a6b3d');
-    g.addColorStop(0.5, '#6a4224');
-    g.addColorStop(1, '#3c2110');
+    g.addColorStop(0, '#7d5229');
+    g.addColorStop(0.55, '#57351a');
+    g.addColorStop(1, '#331b0b');
     trace(ctx, front);
     ctx.fillStyle = g;
     ctx.fill();
-
-    // end caps
-    for (const x of [x0, x1]) {
-      const cap = this.poly3(ctx, [[x, y0, zt], [x, y1, zt], [x, y1, 0.008], [x, y0, 0.008]]);
-      trace(ctx, cap);
-      ctx.fillStyle = '#4a2b15';
-      ctx.fill();
-    }
 
     // top face
     const top = this.poly3(ctx, [[x0, y0, zt], [x1, y0, zt], [x1, y1, zt], [x0, y1, zt]]);
     bb = bbox(top);
     g = ctx.createLinearGradient(bb.x0, bb.y0, bb.x1, bb.y1);
-    g.addColorStop(0, '#b98a55');
-    g.addColorStop(0.45, '#8d5f34');
-    g.addColorStop(1, '#5f3a1d');
+    g.addColorStop(0, '#93643a');
+    g.addColorStop(0.45, '#7a5029');
+    g.addColorStop(1, '#553318');
     trace(ctx, top);
     ctx.fillStyle = g;
     ctx.fill();
-    ctx.strokeStyle = 'rgba(255,220,170,0.18)';
+    ctx.strokeStyle = 'rgba(255,220,170,0.20)';
     ctx.lineWidth = 1;
     ctx.stroke();
+
+    // fine centre bead so the separation reads clearly
+    const bead = this.poly3(ctx, [
+      [-0.05, y0 + 0.75, zt], [0.05, y0 + 0.75, zt],
+      [0.05, y1 - 0.75, zt], [-0.05, y1 - 0.75, zt],
+    ]);
+    trace(ctx, bead);
+    ctx.fillStyle = 'rgba(216,178,106,0.16)';
+    ctx.fill();
   }
 
   drawLabels(ctx) {
@@ -728,8 +766,8 @@ export class Renderer {
     ctx.textBaseline = 'middle';
     for (let p = 1; p <= 24; p++) {
       const bottom = p <= 12;
-      const x = b.X0 + colIndex(p) + 0.5;
-      const y = bottom ? b.Y0 - 0.94 : b.Y1 + 0.94;
+      const x = colX(colIndex(p));
+      const y = bottom ? b.Y0 - 0.85 : b.Y1 + 0.85;
       const pos = this.p(x, y, 0.01);
       const dir = this.p(x + 0.2, y, 0.01);
       const ang = Math.atan2(dir.y - pos.y, dir.x - pos.x);
@@ -773,8 +811,9 @@ export class Renderer {
     const pulse = 0.62 + 0.38 * Math.sin(time / 380);
     let x, y, z;
     if (selected.kind === 'bar') {
-      x = barX(state.turn);
-      y = 0;
+      const bp = barPos(state.turn, Math.max(0, state.bar[state.turn] - 1));
+      x = bp.x;
+      y = bp.y;
       z = BOARD.BAR_TOP;
     } else if (selected.kind === 'off') {
       return;
@@ -817,11 +856,12 @@ export class Renderer {
     for (let pl = 0; pl < 2; pl++) {
       for (let i = 0; i < state.bar[pl]; i++) {
         if (hide && hide.kind === 'bar' && hide.player === pl && i === state.bar[pl] - 1) continue;
+        const bp = barPos(pl, i);
         pieces.push({
           owner: pl,
-          x: barX(pl),
-          y: 0,
-          z: BOARD.BAR_TOP + i * BOARD.CSTEP,
+          x: bp.x,
+          y: bp.y,
+          z: bp.z,
           surfaceZ: BOARD.BAR_TOP,
           i,
         });

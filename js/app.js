@@ -4,7 +4,7 @@
 
 import * as R from './rules.js';
 import {
-  Renderer, BOARD, DICE_REST, pointX, pointY, offPos, barX, hitTest,
+  Renderer, BOARD, DICE_REST, pointX, pointY, offPos, barPos, hitTest,
   qAxisAngle, qSlerp, qMul, qNorm, qFaceUp, faceNormalForValue,
 } from './scene.js';
 import { bestTurn } from './ai.js';
@@ -273,7 +273,8 @@ function animateMove(mv) {
     const player = st.turn;
     let from;
     if (mv.from === R.BAR) {
-      from = { x: barX(player), y: 0, z: BOARD.BAR_TOP + Math.max(0, st.bar[player] - 1) * BOARD.CSTEP };
+      const bp = barPos(player, Math.max(0, st.bar[player] - 1));
+      from = { x: bp.x, y: bp.y, z: bp.z };
     } else {
       from = { x: pointX(mv.from), y: pointY(mv.from), z: Math.max(0, R.countAt(st, mv.from) - 1) * BOARD.CSTEP };
     }

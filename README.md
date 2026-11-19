@@ -8,6 +8,10 @@ side walls, highlights and drop shadows, and the dice are **actual cubes** whose
 pips sit on the faces — they tumble through quaternion-space while rolling and
 land on the number you rolled.
 
+The layout is the classic one: the outer boards on the left, each player's home
+board on the right, the points meeting across the middle of the board and a
+raised **vertical bar** separating the two halves.
+
 ![The board, mid-game](docs/preview.jpg)
 
 ## Play

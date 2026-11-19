@@ -2,6 +2,7 @@
    projected board positions. Catches renderer + flow runtime errors. */
 import assert from 'node:assert';
 import { installDom } from './mock-dom.js';
+import { pointX, pointY, barPos, offPos, BOARD } from '../js/scene.js';
 
 const dom = installDom();
 await import('../js/app.js');
@@ -22,9 +23,7 @@ function test(name, fn) {
 const canvas = dom.el('board');
 
 function screenOf(p, z = 0) {
-  const x = -6 + (p <= 12 ? 12 - p : p - 13) + 0.5;
-  const y = p <= 12 ? -4.5 + 0.49 : 4.5 - 0.49;
-  return renderer.cam.project(x, y, z);
+  return renderer.cam.project(pointX(p), pointY(p), z);
 }
 
 function clickAt(p, z = 0) {
@@ -44,13 +43,15 @@ test('boots and renders frames', () => {
 
 test('camera fit keeps the whole board on screen', () => {
   const cam = renderer.cam;
-  for (const [x, y] of [[-7.12, -5.62], [8.57, -5.62], [8.57, 5.62], [-7.12, 5.62]]) {
+  const corners = [[BOARD.OUT_X0, BOARD.OUT_Y0], [BOARD.OUT_X1, BOARD.OUT_Y0],
+    [BOARD.OUT_X1, BOARD.OUT_Y1], [BOARD.OUT_X0, BOARD.OUT_Y1]];
+  for (const [x, y] of corners) {
     const p = cam.project(x, y, 0);
     assert.ok(p.x > 0 && p.x < 1280, `x ${p.x} in view`);
     assert.ok(p.y > 0 && p.y < 780, `y ${p.y} in view`);
   }
   // the dice in front of the board must be visible too
-  const d = cam.project(1.35, -6.2, -0.95);
+  const d = cam.project(1.4, -5.84, -BOARD.THICK);
   assert.ok(d.y > 0 && d.y < 780, 'dice visible');
 });
 
@@ -108,6 +109,21 @@ test('renderer copes with selection, targets, hover and a flight', () => {
   assert.ok(dom.stats.fill > frames);
 });
 
+test('every point maps to a distinct column, and the bar is its own target', () => {
+  const cols = new Map();
+  for (let p = 1; p <= 24; p++) {
+    const k = Math.round(pointX(p) * 10);
+    cols.set(k, (cols.get(k) || 0) + 1);
+  }
+  assert.equal(cols.size, 12, '12 columns');
+  for (const n of cols.values()) assert.equal(n, 2, 'one point per row in each column');
+  // the vertical bar in the middle has no point on it
+  assert.ok(Math.abs(pointX(19) - pointX(18)) > 1.5, 'a gap across the bar');
+  const bar = renderer.cam.project(0, 0, 0);
+  canvas.dispatch('pointerdown', { clientX: bar.x, clientY: bar.y });
+  assert.equal(G.sel, null);
+});
+
 test('board clicks outside the points are ignored safely', () => {
   const w = 1280;
   for (let i = 0; i < 12; i++) {
@@ -132,7 +148,7 @@ test('renderer survives a full dice animation + bar and off states', () => {
   G.state.bar[0] = 1;
   G.flight = {
     t0: dom.now(), dur: 300, arc: 0.5, owner: 0,
-    from: { x: -1.15, y: 0, z: 0.22 }, to: { x: 1.7, y: -3.95, z: 0 },
+    from: barPos(0), to: { x: pointX(6), y: pointY(6), z: 0 },
     surfaceZ: 0.22, hide: { kind: 'bar', player: 0 },
   };
   G.busy = true;
