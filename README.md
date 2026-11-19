@@ -8,9 +8,12 @@ side walls, highlights and drop shadows, and the dice are **actual cubes** whose
 pips sit on the faces — they tumble through quaternion-space while rolling and
 land on the number you rolled.
 
-The layout is the classic one: the outer boards on the left, each player's home
-board on the right, the points meeting across the middle of the board and a
-raised **vertical bar** separating the two halves.
+The layout follows the reference diagram: two framed panels side by side on a
+pale peach field, the outer boards on the left and each player's home board on
+the right, short sage-and-cream points that stop well short of the centre, and
+a raised **vertical bar** standing in the channel between the panels. The board
+is divided **left to right only** — no line runs across it horizontally, so the
+bar is the single section in the surface.
 
 ![The board, mid-game](docs/preview.jpg)
 

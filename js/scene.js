@@ -38,18 +38,20 @@ export const DICE_REST = [
   { x: 1.4, y: -5.84 },
 ];
 
+const POINT_GAP = 0.95;  // how far a point's tip stops short of the middle
+
 const COL = {
-  woodHi: '#a9774a',
-  wood: '#7f5130',
-  woodLo: '#54321a',
-  woodDeep: '#371d0d',
-  feltHi: '#1a6051',
-  felt: '#0f4639',
-  feltLo: '#082e27',
-  cream: '#eadfbf',
-  creamLo: '#cbb894',
-  red: '#a63f2f',
-  redLo: '#79281b',
+  woodHi: '#dda06a',
+  wood: '#c8824b',
+  woodLo: '#9a5c2b',
+  woodDeep: '#5d3413',
+  feltHi: '#ffdcb4',
+  felt: '#ffcc99',
+  feltLo: '#f0b47e',
+  pointA: '#f9e9ae',
+  pointALo: '#e6d287',
+  pointB: '#8fb87f',
+  pointBLo: '#6b9a5c',
   gold: '#d8b26a',
   ivory: '#f3ead7',
   ivoryDark: '#c9b998',
@@ -479,10 +481,10 @@ export class Renderer {
 
     // ---- sides
     const shades = [
-      ['#6d4526', '#3d2210'], // front (nearest)
-      ['#4c2e16', '#2a1608'], // right
-      ['#3a2110', '#20120a'], // back
-      ['#4c2e16', '#2a1608'], // left
+      ['#b0763f', '#6b4423'], // front (nearest)
+      ['#82562e', '#4a2c12'], // right
+      ['#5e3a1c', '#33190a'], // back
+      ['#82562e', '#4a2c12'], // left
     ];
     for (let i = 0; i < 4; i++) {
       const a = outer[i];
@@ -517,8 +519,8 @@ export class Renderer {
     ctx.save();
     trace(ctx, top);
     ctx.clip();
-    ctx.globalAlpha = 0.07;
-    ctx.strokeStyle = '#3a210f';
+    ctx.globalAlpha = 0.06;
+    ctx.strokeStyle = '#4a2a10';
     ctx.lineWidth = 1;
     for (let i = 0; i < 22; i++) {
       const y = b.OUT_Y0 + 0.35 + (i / 22) * (b.OUT_Y1 - b.OUT_Y0 - 0.7);
@@ -579,14 +581,19 @@ export class Renderer {
       [b.FELT_X1, b.FELT_Y1, 0.004],
       [b.FELT_X0, b.FELT_Y1, 0.004],
     ]);
-    trace(ctx, inner);
-    ctx.strokeStyle = 'rgba(0,0,0,0.42)';
-    ctx.lineWidth = 10 * (this.cam.focal / 90);
-    ctx.stroke();
+    // soft recessed edge: a stack of thin strokes instead of one wide one,
+    // so the shading fades out instead of ending on a hard visible edge
+    const k = clamp(this.cam.focal / 90, 0.5, 2.2);
+    for (let i = 1; i <= 7; i++) {
+      trace(ctx, inner);
+      ctx.strokeStyle = `rgba(94,52,16,${0.075 * (1 - (i - 1) / 8)})`;
+      ctx.lineWidth = i * 1.9 * k;
+      ctx.stroke();
+    }
     ctx.restore();
 
     trace(ctx, felt);
-    ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+    ctx.strokeStyle = 'rgba(84,48,16,0.55)';
     ctx.lineWidth = 1.2;
     ctx.stroke();
 
@@ -618,7 +625,7 @@ export class Renderer {
     for (const [ya, yb] of wells) {
       const pts = this.poly3(ctx, [[x0, ya, z], [x1, ya, z], [x1, yb, z], [x0, yb, z]]);
       trace(ctx, pts);
-      ctx.fillStyle = 'rgba(3,18,15,0.62)';
+      ctx.fillStyle = 'rgba(58,30,10,0.70)';
       ctx.fill();
 
       // recessed inner shadow
@@ -640,23 +647,50 @@ export class Renderer {
   }
 
   drawSeam(ctx) {
-    // vertical accents either side of the bar: the board is split left/right,
-    // never top/bottom, so the only seam lines run along Y.
+    // Two framed panels, side by side, with the raised bar standing in the
+    // channel between them. Nothing here runs across the board horizontally,
+    // so the only section the eye can read is the vertical one.
     const b = BOARD;
-    const y0 = b.FELT_Y0 + 0.34;
-    const y1 = b.FELT_Y1 - 0.34;
-    for (const x of [-(b.BAR_HW + 0.05), b.BAR_HW + 0.05]) {
-      const s0 = this.p(x, y0, 0.005);
-      const s1 = this.p(x, y1, 0.005);
-      ctx.beginPath();
-      ctx.moveTo(s0.x, s0.y);
-      ctx.lineTo(s1.x, s1.y);
-      ctx.strokeStyle = 'rgba(0,0,0,0.20)';
-      ctx.lineWidth = 1.4;
+    const y0 = b.FELT_Y0 + 0.16;
+    const y1 = b.FELT_Y1 - 0.16;
+    const inset = 0.1;
+    const panels = [
+      [b.FELT_X0 + 0.16, -b.BAR_HW - inset],
+      [b.BAR_HW + inset, b.TRAY_X0 - 0.16],
+    ];
+    for (const [xa, xb] of panels) {
+      const rect = (dx, dy) => this.poly3(ctx, [
+        [xa + dx, y0 + dy, 0.005],
+        [xb - dx, y0 + dy, 0.005],
+        [xb - dx, y1 - dy, 0.005],
+        [xa + dx, y1 - dy, 0.005],
+      ]);
+      // warm shadow line marking the panel edge
+      trace(ctx, rect(0, 0));
+      ctx.strokeStyle = 'rgba(80,44,12,0.30)';
+      ctx.lineWidth = 2;
       ctx.stroke();
-      ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+      // light bevel just inside it
+      trace(ctx, rect(0.05, 0.05));
+      ctx.strokeStyle = 'rgba(255,246,224,0.30)';
       ctx.lineWidth = 1;
       ctx.stroke();
+    }
+
+    // channel shadow on the felt either side of the bar, full depth
+    for (const side of [-1, 1]) {
+      const edge = side < 0 ? -b.BAR_HW - inset : b.BAR_HW + inset;
+      for (let i = 0; i < 3; i++) {
+        const a = edge + side * i * 0.09;
+        const c = a + side * 0.09;
+        const band = this.poly3(ctx, [
+          [a, b.FELT_Y0 + 0.16, 0.0048], [c, b.FELT_Y0 + 0.16, 0.0048],
+          [c, b.FELT_Y1 - 0.16, 0.0048], [a, b.FELT_Y1 - 0.16, 0.0048],
+        ]);
+        trace(ctx, band);
+        ctx.fillStyle = `rgba(70,38,10,${0.13 - i * 0.035})`;
+        ctx.fill();
+      }
     }
   }
 
@@ -668,12 +702,15 @@ export class Renderer {
       const x0 = xc - 0.5;
       const x1 = xc + 0.5;
       const baseY = bottom ? b.Y0 : b.Y1;
-      const apexY = 0;
+      // the reference board keeps its points well short of the middle: they run
+      // ~35% of the field and leave a band of bare surface between the rows, so
+      // nothing draws a horizontal line across the board.
+      const apexY = bottom ? -POINT_GAP : POINT_GAP;
       const z = 0.008;
       const tri = this.poly3(ctx, [[x0, baseY, z], [x1, baseY, z], [xc, apexY, z]]);
-      const isRed = colIndex(p) % 2 === 1;
-      const base = isRed ? COL.red : COL.cream;
-      const lo = isRed ? COL.redLo : COL.creamLo;
+      const isB = colIndex(p) % 2 === 1;
+      const base = isB ? COL.pointB : COL.pointA;
+      const lo = isB ? COL.pointBLo : COL.pointALo;
       const gBase = this.p(xc, baseY, z);
       const gApex = this.p(xc, apexY, z);
       const g = ctx.createLinearGradient(gBase.x, gBase.y, gApex.x, gApex.y);
@@ -682,7 +719,7 @@ export class Renderer {
       trace(ctx, tri);
       ctx.fillStyle = g;
       ctx.fill();
-      ctx.strokeStyle = isRed ? 'rgba(0,0,0,0.22)' : 'rgba(120,95,50,0.30)';
+      ctx.strokeStyle = isB ? 'rgba(52,78,42,0.34)' : 'rgba(120,98,44,0.26)';
       ctx.lineWidth = 0.9;
       ctx.stroke();
 
@@ -693,7 +730,7 @@ export class Renderer {
         [x0 + 0.2, baseY, z],
       ]);
       trace(ctx, sheen);
-      ctx.fillStyle = 'rgba(255,255,255,0.05)';
+      ctx.fillStyle = 'rgba(255,255,255,0.10)';
       ctx.fill();
     }
   }
@@ -717,13 +754,13 @@ export class Renderer {
           [c, b.FELT_Y1, 0.006], [a, b.FELT_Y1, 0.006],
         ]);
         trace(ctx, band);
-        ctx.fillStyle = `rgba(0,0,0,${0.18 - i * 0.055})`;
+        ctx.fillStyle = `rgba(70,38,10,${0.26 - i * 0.075})`;
         ctx.fill();
       }
     }
 
     // the two long side faces
-    for (const [x, col] of [[x0, '#432510'], [x1, '#4d2b14']]) {
+    for (const [x, col] of [[x0, '#8a5228'], [x1, '#9a5f31']]) {
       const face = this.poly3(ctx, [[x, y0, zt], [x, y1, zt], [x, y1, 0.008], [x, y0, 0.008]]);
       trace(ctx, face);
       ctx.fillStyle = col;
@@ -734,9 +771,9 @@ export class Renderer {
     const front = this.poly3(ctx, [[x0, y0, zt], [x1, y0, zt], [x1, y0, 0.008], [x0, y0, 0.008]]);
     let bb = bbox(front);
     let g = ctx.createLinearGradient(bb.x0, bb.y0, bb.x0, bb.y1);
-    g.addColorStop(0, '#7d5229');
-    g.addColorStop(0.55, '#57351a');
-    g.addColorStop(1, '#331b0b');
+    g.addColorStop(0, '#d99a5e');
+    g.addColorStop(0.55, '#b3743c');
+    g.addColorStop(1, '#7d4a1f');
     trace(ctx, front);
     ctx.fillStyle = g;
     ctx.fill();
@@ -745,9 +782,9 @@ export class Renderer {
     const top = this.poly3(ctx, [[x0, y0, zt], [x1, y0, zt], [x1, y1, zt], [x0, y1, zt]]);
     bb = bbox(top);
     g = ctx.createLinearGradient(bb.x0, bb.y0, bb.x1, bb.y1);
-    g.addColorStop(0, '#93643a');
-    g.addColorStop(0.45, '#7a5029');
-    g.addColorStop(1, '#553318');
+    g.addColorStop(0, '#eab07a');
+    g.addColorStop(0.45, '#d1904f');
+    g.addColorStop(1, '#a96b33');
     trace(ctx, top);
     ctx.fillStyle = g;
     ctx.fill();
