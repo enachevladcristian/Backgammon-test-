@@ -41,7 +41,9 @@ const server = http.createServer((req, res) => {
     }
     res.writeHead(200, {
       'content-type': MIME[path.extname(file).toLowerCase()] || 'application/octet-stream',
-      'cache-control': 'no-cache',
+      'cache-control': 'no-store, must-revalidate',
+      'pragma': 'no-cache',
+      'expires': '0',
     });
     res.end(data);
   });

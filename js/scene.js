@@ -425,6 +425,7 @@ export class Renderer {
     this.drawFelt(ctx);
     this.drawTray(ctx);
     this.drawPoints(ctx);
+    this.drawSeam(ctx);
     this.drawBar(ctx);
     this.drawLabels(ctx);
     this.dirty = false;
@@ -607,53 +608,56 @@ export class Renderer {
     const b = BOARD;
     const x0 = b.TRAY_X0;
     const x1 = b.TRAY_X1;
-    const y0 = b.FELT_Y0 + 0.28;
-    const y1 = b.FELT_Y1 - 0.28;
     const z = 0.006;
-    const pts = this.poly3(ctx, [[x0, y0, z], [x1, y0, z], [x1, y1, z], [x0, y1, z]]);
-    trace(ctx, pts);
-    ctx.fillStyle = 'rgba(3,18,15,0.62)';
-    ctx.fill();
+    const gap = 0.17;
+    // two separate wells, one per player, split by a bridge of bare board
+    const wells = [
+      [b.FELT_Y0 + 0.26, -gap],
+      [gap, b.FELT_Y1 - 0.26],
+    ];
+    for (const [ya, yb] of wells) {
+      const pts = this.poly3(ctx, [[x0, ya, z], [x1, ya, z], [x1, yb, z], [x0, yb, z]]);
+      trace(ctx, pts);
+      ctx.fillStyle = 'rgba(3,18,15,0.62)';
+      ctx.fill();
 
-    // recessed inner shadow
-    ctx.save();
-    trace(ctx, pts);
-    ctx.clip();
-    const inner = this.poly3(ctx, [[x0, y0, z], [x1, y0, z], [x1, y1, z], [x0, y1, z]]);
-    trace(ctx, inner);
-    ctx.strokeStyle = 'rgba(0,0,0,0.55)';
-    ctx.lineWidth = 7;
-    ctx.stroke();
-    ctx.restore();
+      // recessed inner shadow
+      ctx.save();
+      trace(ctx, pts);
+      ctx.clip();
+      trace(ctx, pts);
+      ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+      ctx.lineWidth = 7;
+      ctx.stroke();
+      ctx.restore();
 
-    // gold rim
-    trace(ctx, pts);
-    ctx.strokeStyle = 'rgba(216,178,106,0.26)';
-    ctx.lineWidth = 1;
-    ctx.stroke();
+      // gold rim
+      trace(ctx, pts);
+      ctx.strokeStyle = 'rgba(216,178,106,0.26)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+  }
 
-    // divider between white's (bottom) and black's (top) tray
-    const a = this.p(x0, 0, 0.004);
-    const c = this.p(x1, 0, 0.004);
-    ctx.beginPath();
-    ctx.moveTo(a.x, a.y);
-    ctx.lineTo(c.x, c.y);
-    ctx.strokeStyle = 'rgba(0,0,0,0.35)';
-    ctx.lineWidth = 2;
-    ctx.stroke();
-    ctx.strokeStyle = 'rgba(216,178,106,0.12)';
-    ctx.lineWidth = 1;
-    ctx.stroke();
-
-    // separator line between the two halves of the board
-    const s0 = this.p(-6.9, 0, 0.004);
-    const s1 = this.p(6.6, 0, 0.004);
-    ctx.beginPath();
-    ctx.moveTo(s0.x, s0.y);
-    ctx.lineTo(s1.x, s1.y);
-    ctx.strokeStyle = 'rgba(0,0,0,0.22)';
-    ctx.lineWidth = 1.2;
-    ctx.stroke();
+  drawSeam(ctx) {
+    // vertical accents either side of the bar: the board is split left/right,
+    // never top/bottom, so the only seam lines run along Y.
+    const b = BOARD;
+    const y0 = b.FELT_Y0 + 0.34;
+    const y1 = b.FELT_Y1 - 0.34;
+    for (const x of [-(b.BAR_HW + 0.05), b.BAR_HW + 0.05]) {
+      const s0 = this.p(x, y0, 0.005);
+      const s1 = this.p(x, y1, 0.005);
+      ctx.beginPath();
+      ctx.moveTo(s0.x, s0.y);
+      ctx.lineTo(s1.x, s1.y);
+      ctx.strokeStyle = 'rgba(0,0,0,0.20)';
+      ctx.lineWidth = 1.4;
+      ctx.stroke();
+      ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
   }
 
   drawPoints(ctx) {
