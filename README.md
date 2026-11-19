@@ -8,7 +8,7 @@ side walls, highlights and drop shadows, and the dice are **actual cubes** whose
 pips sit on the faces — they tumble through quaternion-space while rolling and
 land on the number you rolled.
 
-![the board](#) <!-- run `npm start` and take a look -->
+![The board, mid-game](docs/preview.jpg)
 
 ## Play
 
