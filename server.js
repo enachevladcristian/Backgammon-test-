@@ -76,7 +76,13 @@ export function handler(req, res) {
     return;
   }
 
-  const { pathname } = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+  let pathname;
+  try {
+    ({ pathname } = new URL(req.url, `http://${req.headers.host || 'localhost'}`));
+  } catch {
+    send(400, 'Bad request', { 'content-type': 'text/plain; charset=utf-8' });
+    return;
+  }
   const { file, status } = resolveRequest(pathname);
   if (status) {
     send(status, status === 403 ? 'Forbidden' : status === 400 ? 'Bad request' : 'Not found', {

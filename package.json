@@ -6,6 +6,6 @@
   "type": "module",
   "scripts": {
     "start": "node server.js",
-    "test": "node test/rules.test.js && node test/ai.test.js && node test/score.test.js && node test/app.test.js && node test/server.test.js"
+    "test": "node test/rules.test.js && node test/ai.test.js && node test/score.test.js && node test/shop.test.js && node test/house.test.js && node test/app.test.js && node test/server.test.js"
   }
 }

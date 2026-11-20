@@ -8,7 +8,13 @@ import {
   qAxisAngle, qSlerp, qMul, qNorm, qFaceUp, faceNormalForValue,
 } from './scene.js';
 import { bestTurn } from './ai.js';
-import { BASE_POINTS, rateMove, moveLabel, stakeTarget, stakeName, gameBonus } from './score.js';
+import { BASE_POINTS, rateMove, moveLabel, stakeTarget, stakeName, gameBonus, openBlots } from './score.js';
+import {
+  ITEMS, HEAD_START_POINTS, emptyPerks, purchase, stakeCoins, opensShop,
+} from './shop.js';
+import {
+  houseRulesFor, newestRule, hasHouseRule, taxMove,
+} from './house.js';
 
 const TAU = Math.PI * 2;
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -44,6 +50,13 @@ const el = {
   stakeTarget: document.getElementById('stakeTarget'),
   stakeFill: document.getElementById('stakeFill'),
   floaters: document.getElementById('floaters'),
+  rerollBtn: document.getElementById('rerollBtn'),
+  shop: document.getElementById('shop'),
+  shopCoins: document.getElementById('shopCoins'),
+  shopItems: document.getElementById('shopItems'),
+  shopDone: document.getElementById('shopDone'),
+  shopSub: document.getElementById('shopSub'),
+  stakeHouse: document.getElementById('stakeHouse'),
 };
 
 const G = {
@@ -64,6 +77,15 @@ const G = {
   seq: 0,
   lastRoll: [0, 0],
   run: { level: 1, score: 0, target: stakeTarget(1), cleared: 0, lost: false },
+  wallet: 0,
+  perks: emptyPerks(),
+  movesThisStake: 0,
+  turnMoves: 0,
+  shopOpen: false,
+  shopPending: false,
+  passPending: false,
+  house: [],                       // rules the computer has earned
+  houseUsed: { secondRoll: false, loadedPip: false },
 };
 
 const isHuman = () => G.mode === 'human' || G.state.turn === G.human;
@@ -175,15 +197,22 @@ function newGame(opts = {}) {
   G.diceQuats = [null, null];
   G.undo = [];
   G.hover = null;
-  G.run.score = 0;
+  G.run.score = HEAD_START_POINTS * G.perks.headstarts;
   G.run.lost = false;
+  G.movesThisStake = 0;
+  G.turnMoves = 0;
+  G.passPending = false;
+  G.houseUsed = { secondRoll: false, loadedPip: false };
+  refreshHouse();
   const asked = opts.side === R.WHITE || opts.side === R.BLACK ? opts.side : null;
   G.human = asked === null ? drawSide() : asked;
   hideOverlay();
+  closeShop();
   syncOptions();
   updateUI();
   announceSide();
-  maybeAI();
+  if (G.shopPending) openShop();     // a stake cleared on the game's last move
+  else maybeAI();
 }
 
 function announceSide() {
@@ -216,7 +245,20 @@ function floatPoints(tag, at) {
 function awardMove(before, after, player, at) {
   if (!scoresFor(player)) return null;
   const tag = rateMove(before, after, player);
+  if (G.perks.moveBonus) {
+    tag.bonus = G.perks.moveBonus;
+    tag.total += G.perks.moveBonus;
+  }
+  const roll = G.lastRoll || [];
+  const taxed = taxMove(tag.total, {
+    isDouble: roll.length === 2 && roll[0] === roll[1],
+    usedSix: roll.includes(6),
+    newBlots: Math.max(0, openBlots(after, player) - openBlots(before, player)),
+  }, G.house);
+  if (taxed.total !== tag.total) tag.taxes = taxed.taxes;
+  tag.total = taxed.total;
   G.run.score += tag.total;
+  G.movesThisStake += 1;
   floatPoints(tag, at);
   if (G.run.score >= G.run.target) clearStake();
   else updateStake();
@@ -224,13 +266,131 @@ function awardMove(before, after, player, at) {
 }
 
 function clearStake() {
-  const cleared = stakeName(G.run.level);
-  G.run.level += 1;
+  const level = G.run.level;
+  const cleared = stakeName(level);
+  const coins = stakeCoins(level, G.movesThisStake);
+  G.wallet += coins;
+  G.run.level = level + 1;
   G.run.score = 0;
   G.run.target = stakeTarget(G.run.level);
   G.run.cleared += 1;
+  G.movesThisStake = 0;
   sfx('win');
-  toast(`${cleared} cleared`, 2200);
+  refreshHouse();
+  const gained = newestRule(G.run.cleared);
+  toast(gained ? `${cleared} cleared · +${coins} coins · house: ${gained.name}` : `${cleared} cleared · +${coins} coins`, 2800);
+  updateStake();
+  if (opensShop(level)) {
+    G.shopPending = true;
+    if (G.phase !== 'over') openShop();
+  }
+}
+
+/* ----------------------------------------------------------- the shop */
+
+function renderShop() {
+  el.shopCoins.textContent = G.wallet;
+  el.shopItems.innerHTML = '';
+  for (const item of ITEMS) {
+    const row = document.createElement('div');
+    row.className = 'shop-item';
+    const owned = (item.id === 'reroll' && G.perks.rerolls > 0)
+      || (item.id === 'charm' && G.perks.moveBonus > 0)
+      || (item.id === 'headstart' && G.perks.headstarts > 0);
+    if (owned) row.classList.add('owned');
+    const icon = document.createElement('span');
+    icon.className = 'shop-icon';
+    icon.textContent = item.icon;
+    const text = document.createElement('span');
+    text.className = 'shop-text';
+    const name = document.createElement('b');
+    name.className = 'shop-name';
+    name.textContent = item.name;
+    const blurb = document.createElement('span');
+    blurb.className = 'shop-blurb';
+    blurb.textContent = item.blurb;
+    text.appendChild(name);
+    text.appendChild(blurb);
+    const buy = document.createElement('button');
+    buy.className = 'shop-buy';
+    buy.textContent = `${item.cost} coins`;
+    buy.disabled = G.wallet < item.cost;
+    buy.addEventListener('click', () => buyItem(item.id));
+    row.appendChild(icon);
+    row.appendChild(text);
+    row.appendChild(buy);
+    el.shopItems.appendChild(row);
+  }
+}
+
+function buyItem(id) {
+  ensureAudio();
+  const res = purchase(G.wallet, G.perks, id);
+  if (!res.ok) return;
+  G.wallet = res.wallet;
+  G.perks = res.perks;
+  sfx('place');
+  toast(`Bought ${res.item.name}`, 1500);
+  renderShop();
+  updateUI();
+}
+
+function openShop() {
+  if (G.shopOpen) return;
+  G.shopOpen = true;
+  G.shopPending = false;
+  G.sel = null;
+  const gained = newestRule(G.run.cleared);
+  el.shopSub.textContent = gained
+    ? `Spend your coins — the house answers with “${gained.name}”: ${gained.blurb}`
+    : 'Spend your coins — the next stake is bigger.';
+  renderShop();
+  el.shop.classList.remove('hidden');
+  updateUI();
+}
+
+function closeShop() {
+  const wasOpen = G.shopOpen;
+  G.shopOpen = false;
+  el.shop.classList.add('hidden');
+  if (!wasOpen) return;
+  G.shopPending = false;
+  updateUI();
+  if (G.passPending) {           // the turn that was waiting on the shop
+    G.passPending = false;
+    passTurn();
+    return;
+  }
+  if (G.phase === 'move' && !G.options.length) {
+    completeTurnShortly();
+    return;
+  }
+  maybeAI();
+}
+
+/* the loaded dice: reroll before you have moved this turn */
+function canReroll() {
+  return G.perks.rerolls > 0
+    && G.phase === 'move' && !G.busy && isHuman()
+    && G.turnMoves === 0 && !G.shopOpen;
+}
+
+function rerollNow() {
+  if (!canReroll()) return;
+  ensureAudio();
+  G.perks.rerolls -= 1;
+  G.state.dice = [];
+  G.phase = 'roll';
+  G.sel = null;
+  sfx('dice');
+  toast('Rerolling', 900);
+  syncOptions();
+  updateUI();
+  rollDice();
+}
+
+function refreshHouse() {
+  G.house = houseRulesFor(G.run.cleared);
   updateStake();
 }
 
@@ -250,11 +410,17 @@ function updateStake() {
   const pct = Math.max(0, Math.min(100, (run.score / run.target) * 100));
   if (el.stakeFill.style) el.stakeFill.style.width = `${pct.toFixed(1)}%`;
   el.stakeChip.classList.toggle('ready', pct >= 75);
+
+  if (el.stakeHouse) {
+    const names = G.house.map((r) => r.name.toLowerCase());
+    el.stakeHouse.textContent = names.length ? `House: ${names.join(' · ')}` : '';
+    el.stakeHouse.classList.toggle('hidden', !names.length);
+  }
   el.stakeChip.title = `${stakeName(run.level)}: bank ${run.target - run.score} more points to clear it`;
 }
 
 function rollDice() {
-  if (G.phase !== 'roll' || G.busy) return;
+  if (G.phase !== 'roll' || G.busy || G.shopOpen) return;
   const a = 1 + Math.floor(Math.random() * 6);
   const b = 1 + Math.floor(Math.random() * 6);
   G.lastRoll = [a, b];
@@ -296,6 +462,7 @@ function afterRoll() {
   const st = G.state;
   if (G.phase !== 'move') return;
   if (!G.options.length) {
+    if (!isHuman() && houseRescue()) return;
     toast(`${R.nameOf(st.turn)} has no legal moves`);
     const seq = G.seq;
     G.busy = true;
@@ -312,20 +479,70 @@ function afterRoll() {
   if (!isHuman()) aiMove();
 }
 
-function passTurn() {
+/* the house spends a charge rather than lose its turn */
+function houseRescue() {
+  if (G.mode !== 'ai' || isHuman()) return false;
   const st = G.state;
+  const used = G.houseUsed || {};
+  // loaded pip: nudge the die that gives it something to play
+  if (hasHouseRule(G.house, 'loadedPip') && !used.loadedPip) {
+    for (const die of st.dice) {
+      if (die.used || die.v >= 6) continue;
+      const before = die.v;
+      die.v = before + 1;
+      syncOptions();
+      if (G.options.length) {
+        used.loadedPip = true;
+        sfx('place');
+        toast('The house loads a pip', 1500);
+        updateUI();
+        return true;
+      }
+      die.v = before;
+    }
+    syncOptions();
+  }
+  // second roll: take the dice again
+  if (hasHouseRule(G.house, 'secondRoll') && !used.secondRoll) {
+    used.secondRoll = true;
+    toast('The house rolls again', 1500);
+    rerollForAI();
+    return true;
+  }
+  return false;
+}
+
+function rerollForAI() {
+  G.state.dice = [];
+  G.phase = 'roll';
+  G.sel = null;
+  syncOptions();
+  updateUI();
+  rollDice();
+}
+
+function passTurn() {
+  if (G.shopOpen) {              // the shop freezes the table
+    G.busy = false;
+    G.passPending = true;        // hand the turn over as soon as it closes
+    return;
+  }
+  const st = G.state;
+  G.turnMoves = 0;
   st.turn = R.other(st.turn);
   st.dice = [];
   G.phase = 'roll';
   G.sel = null;
   G.undo = [];
   G.hover = null;
+  G.turnMoves = 0;
   syncOptions();
   updateUI();
   maybeAI();
 }
 
 function maybeAI() {
+  if (G.shopOpen) return;
   if (G.mode !== 'ai' || G.state.turn === G.human) return;
   if (G.phase !== 'roll') return;
   const seq = G.seq;
@@ -401,6 +618,7 @@ function completeFlight() {
   st = R.useDie(st, f.mv.die);
   G.state = st;
   G.busy = false;
+  if (f.owner === G.state.turn) G.turnMoves += 1;
 
   const opp = R.other(f.owner);
   if (st.bar[opp] > barBefore[opp]) {
@@ -491,6 +709,7 @@ function pickCandidate(cands, fromPoint) {
 }
 
 function onBoardClick(sx, sy) {
+  if (G.shopOpen) return;
   if (G.phase !== 'move' || G.busy || !isHuman()) {
     if (G.phase === 'roll' && isHuman() && !G.busy) rollDice();
     return;
@@ -583,6 +802,8 @@ el.rollBtn.addEventListener('click', () => {
 
 el.newBtn.addEventListener('click', () => { ensureAudio(); newGame(); });
 el.overlayBtn.addEventListener('click', () => { ensureAudio(); newGame(); });
+el.shopDone.addEventListener('click', () => { ensureAudio(); closeShop(); });
+el.rerollBtn.addEventListener('click', () => rerollNow());
 
 el.modeBtn.addEventListener('click', () => {
   G.mode = G.mode === 'ai' ? 'human' : 'ai';
@@ -610,10 +831,13 @@ el.soundBtn.addEventListener('click', () => {
 window.addEventListener('keydown', (e) => {
   if (e.code === 'Space' || e.key === ' ') {
     e.preventDefault();
+    if (G.shopOpen) return;
     if (G.phase === 'roll' && isHuman() && !G.busy) { ensureAudio(); rollDice(); }
   } else if (e.key === 'Escape') {
     G.sel = null;
     updateUI();
+  } else if (e.key === 'r' || e.key === 'R') {
+    if (canReroll()) rerollNow();
   } else if (e.key === 'n' || e.key === 'N') {
     newGame();
   }
@@ -677,7 +901,7 @@ function updateUI() {
   el.turnSub.textContent = G.busy && G.phase === 'roll' ? 'Rolling…' : sub;
 
   // roll button
-  const canRoll = G.phase === 'roll' && !G.busy && isHuman();
+  const canRoll = G.phase === 'roll' && !G.busy && isHuman() && !G.shopOpen;
   el.rollBtn.disabled = !canRoll;
   el.rollBtn.classList.toggle('pulse', canRoll);
   el.rollLabel.textContent = canRoll
@@ -711,6 +935,13 @@ function updateUI() {
   el.pipB.parentElement.classList.toggle('you', G.mode === 'ai' && G.human === R.BLACK);
 
   updateStake();
+
+  // loaded dice
+  const reroll = canReroll();
+  // shown whenever you own dice control, enabled only before you move this turn
+  el.rerollBtn.classList.toggle('hidden', !(G.perks.rerolls > 0 && isHuman() && !G.shopOpen));
+  el.rerollBtn.disabled = !reroll;
+  el.rerollBtn.textContent = `Reroll · ${G.perks.rerolls}`;
 
   el.undoBtn.disabled = !(G.undo.length > 0 && isHuman() && !G.busy && G.phase === 'move');
   el.modeBtn.textContent = G.mode === 'ai' ? 'vs Computer' : 'Two players';
@@ -836,4 +1067,6 @@ newGame();          // first game also draws a side
 requestAnimationFrame(frame);
 
 // handy for debugging from the console
-window.__bg = { G, R, renderer, newGame, rollDice, drawSide, updateStake };
+window.__bg = {
+  G, R, renderer, newGame, rollDice, drawSide, updateStake, houseRescue, taxMove,
+};

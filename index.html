@@ -27,6 +27,7 @@
         <span class="stake-name" id="stakeName">Stake I</span>
         <span class="stake-val"><b id="stakeScore">0</b><i>/</i><span id="stakeTarget">500</span></span>
       </div>
+      <div class="stake-house hidden" id="stakeHouse"></div>
       <div class="stake-bar"><i id="stakeFill"></i></div>
     </div>
 
@@ -64,12 +65,26 @@
 
   <div class="roll-panel">
     <div class="dice-row" id="diceRow"></div>
+    <button class="btn reroll-btn hidden" id="rerollBtn" title="Loaded dice: reroll before you move">Reroll</button>
     <button class="roll-btn" id="rollBtn"><span id="rollLabel">Roll dice</span></button>
   </div>
 
   <div class="floaters" id="floaters" aria-hidden="true"></div>
 
   <div class="toast" id="toast" role="status"></div>
+
+  <div class="shop hidden" id="shop" role="dialog" aria-modal="true">
+    <div class="shop-card">
+      <div class="shop-head">
+        <span class="shop-mark" aria-hidden="true">&#9670;</span>
+        <h2>Stake cleared</h2>
+        <p id="shopSub">Spend your coins — the next stake is bigger.</p>
+      </div>
+      <div class="shop-wallet"><b id="shopCoins">0</b><span>coins</span></div>
+      <div class="shop-items" id="shopItems"></div>
+      <button class="btn primary" id="shopDone">Continue</button>
+    </div>
+  </div>
 
   <div class="overlay hidden" id="overlay">
     <div class="card">

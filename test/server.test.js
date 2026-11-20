@@ -84,6 +84,13 @@ await test('malformed escapes are a bad request, not a crash', async () => {
   assert.equal(again.status, 200, 'server still healthy');
 });
 
+await test('a protocol-relative path does not take the server down', async () => {
+  // "//" used to reach new URL() unguarded and throw out of the handler
+  assert.equal((await raw('//')).status, 400);
+  assert.equal((await raw('///')).status, 400);
+  assert.equal((await raw('/')).status, 200, 'still serving');
+});
+
 await test('missing files, directories and other verbs are handled', async () => {
   assert.equal((await raw('/nope.js')).status, 404);
   assert.equal((await raw('/js')).status, 404, 'no directory listing');

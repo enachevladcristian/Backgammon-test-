@@ -31,7 +31,7 @@ export function installDom({ width = 1280, height = 780, dpr = 2 } = {}) {
       this._listeners = {};
       this._classes = new Set();
       this.textContent = '';
-      this.innerHTML = '';
+      this._html = '';
       this.disabled = false;
       this.attrs = {};
       this.parentElement = null;
@@ -48,6 +48,11 @@ export function installDom({ width = 1280, height = 780, dpr = 2 } = {}) {
         },
         contains: (c) => self._classes.has(c),
       };
+    }
+    get innerHTML() { return this._html; }
+    set innerHTML(v) {
+      this._html = String(v);
+      if (this._html === '') this.children = [];   // like the real thing
     }
     get className() { return [...this._classes].join(' '); }
     set className(v) { this._classes = new Set(String(v).split(/\s+/).filter(Boolean)); }
@@ -91,8 +96,9 @@ export function installDom({ width = 1280, height = 780, dpr = 2 } = {}) {
     addEventListener() {},
   };
 
+  const winListeners = {};
   const windowMock = {
-    addEventListener() {},
+    addEventListener(type, fn) { (winListeners[type] ||= []).push(fn); },
     devicePixelRatio: dpr,
     innerWidth: width,
     innerHeight: height,
@@ -119,5 +125,16 @@ export function installDom({ width = 1280, height = 780, dpr = 2 } = {}) {
     }
   }
 
-  return { document: documentMock, window: windowMock, ctx, stats, getElement, step, now: () => T, setNow: (v) => { T = v; }, el: (id) => getElement(id) };
+  return {
+    document: documentMock,
+    window: windowMock,
+    ctx,
+    stats,
+    getElement,
+    step,
+    now: () => T,
+    setNow: (v) => { T = v; },
+    el: (id) => getElement(id),
+    dispatchWindow: (type, ev = {}) => (winListeners[type] || []).forEach((fn) => fn(ev)),
+  };
 }

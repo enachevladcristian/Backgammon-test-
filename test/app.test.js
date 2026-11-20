@@ -290,4 +290,215 @@ test('filling the stake clears it and raises the level', () => {
 }
 
 
+const shopEl = dom.el('shop');
+const buyButtons = () => dom.el('shopItems').children.map((row) => row.children[2]);
+
+/** clear stake I on the next move, so the shop opens */
+function openShopNow() {
+  app.newGame({ side: R.WHITE });     // also closes any shop left open
+  dom.step(16, 2);
+  G.run.level = 1;
+  G.run.target = 500;
+  G.run.score = 499;
+  playOneMove();
+}
+
+test('clearing the first stake pays coins and opens the shop', () => {
+  G.wallet = 0;
+  openShopNow();
+  assert.equal(G.run.level, 2, 'stake I cleared');
+  assert.ok(G.wallet > 0, `paid ${G.wallet} coins`);
+  assert.equal(G.shopOpen, true);
+  assert.equal(shopEl.classList.contains('hidden'), false, 'the shop is on screen');
+  assert.equal(dom.el('shopCoins').textContent, G.wallet);
+  assert.equal(buyButtons().length, 3, 'three things to buy');
+});
+
+test('the shop freezes the table', () => {
+  const rolls = G.state.dice.length;
+  const counts = G.state.points.map((p) => p.count).join(',');
+  dom.el('rollBtn').dispatch('click', {});
+  dom.step(16, 20);
+  dom.dispatchWindow('keydown', { code: 'Space', key: ' ', preventDefault() {} });
+  dom.step(16, 20);
+  assert.equal(G.state.dice.length, rolls, 'no dice rolled');
+  assert.equal(G.state.points.map((p) => p.count).join(','), counts, 'no moves made');
+});
+
+test('buying spends coins and applies the perk', () => {
+  G.wallet = 200;
+  dom.el('shopDone').dispatch('click', {});
+  assert.equal(G.shopOpen, false, 'continue closes the shop');
+  openShopNow();
+  assert.equal(G.shopOpen, true, 'and it comes back at the next stake');
+
+  const coins = G.wallet;
+  buyButtons()[0].dispatch('click', {});        // loaded dice
+  assert.equal(G.perks.rerolls, 1, 'reroll perk granted');
+  assert.equal(G.wallet, coins - 30, 'coins deducted');
+  assert.equal(dom.el('shopCoins').textContent, G.wallet, 'wallet redrawn');
+
+  buyButtons()[1].dispatch('click', {});        // lucky charm
+  assert.equal(G.perks.moveBonus, 6, 'charm granted');
+  assert.equal(G.wallet, coins - 70);
+});
+
+test('the charm adds points to every move', () => {
+  dom.el('shopDone').dispatch('click', {});
+  G.run.cleared = 0;                     // no house taxes for this measurement
+  app.newGame({ side: R.WHITE });
+  assert.equal(G.perks.moveBonus, 6, 'charm carries into the next game');
+  assert.deepEqual(G.house, [], 'and the house is quiet');
+  dom.step(16, 2);
+  const before = G.run.score;
+  playOneMove();
+  const gained = G.run.score - before;
+  assert.ok(gained > 12, `banked ${gained}: base 20 plus charm at least`);
+});
+
+test('head start banks points at the start of a game', () => {
+  G.perks.headstarts = 1;
+  app.newGame({ side: R.WHITE });
+  assert.equal(G.run.score, 120, 'opened with the head start');
+  G.perks.headstarts = 0;
+  app.newGame({ side: R.WHITE });
+  assert.equal(G.run.score, 0, 'and without it you start at zero');
+});
+
+test('loaded dice reroll the roll, once', () => {
+  G.perks.rerolls = 1;
+  app.newGame({ side: R.WHITE });
+  dom.step(16, 2);
+  assert.equal(dom.el('rerollBtn').classList.contains('hidden'), false, 'reroll offered');
+  dom.el('rollBtn').dispatch('click', {});
+  dom.step(16, 80);
+  assert.equal(G.phase, 'move', 'rolled');
+  assert.equal(dom.el('rerollBtn').disabled, false, 'rerollable before moving');
+  dom.el('rerollBtn').dispatch('click', {});
+  assert.equal(G.perks.rerolls, 0, 'the perk is spent');
+  dom.step(16, 80);
+  assert.equal(G.phase, 'move', 'new dice are in play');
+  assert.ok(G.state.dice.length >= 2);
+  assert.equal(dom.el('rerollBtn').disabled, true, 'nothing left to spend');
+});
+
+test('only the first stake opens a shop', () => {
+  app.newGame({ side: R.WHITE });
+  dom.step(16, 2);
+  G.run.level = 3;
+  G.run.target = 500;
+  G.run.score = 499;
+  playOneMove();
+  assert.equal(G.run.level, 4, 'stake III cleared');
+  assert.equal(G.shopOpen, false, 'no shop after a later stake yet');
+  app.newGame({ side: R.WHITE });
+  dom.step(16, 2);
+});
+
+test('clearing a stake arms the house with its next rule', () => {
+  G.run.cleared = 0;
+  app.newGame({ side: R.WHITE });
+  assert.deepEqual(G.house, [], 'the house starts with nothing');
+  assert.equal(dom.el('stakeHouse').classList.contains('hidden'), true, 'no house line');
+
+  G.run.cleared = 1;
+  app.newGame({ side: R.WHITE });
+  assert.deepEqual(G.house.map((r) => r.id), ['doublesTax']);
+  assert.equal(dom.el('stakeHouse').classList.contains('hidden'), false);
+  assert.match(dom.el('stakeHouse').textContent, /doubles tax/i);
+});
+
+test('the doubles tax cuts a doubles move to a third', () => {
+  const orig = Math.random;
+  Math.random = () => 0.42;              // 1 + floor(0.42 * 6) = 3, so every roll is 3-3
+  let raw = 0;
+  let taxed = 0;
+  try {
+    G.run.cleared = 0;
+    G.perks = { rerolls: 0, moveBonus: 0, headstarts: 0 };
+    app.newGame({ side: R.WHITE });
+    dom.step(16, 2);
+    const a = G.run.score;
+    playOneMove();
+    raw = G.run.score - a;
+    assert.deepEqual(G.lastRoll, [3, 3], 'the seed really rolls doubles');
+
+    G.run.cleared = 1;
+    app.newGame({ side: R.WHITE });
+    dom.step(16, 2);
+    const b = G.run.score;
+    playOneMove();
+    taxed = G.run.score - b;
+  } finally {
+    Math.random = orig;
+  }
+  assert.ok(raw > 9, `the untaxed move banks ${raw}`);
+  assert.equal(taxed, Math.max(1, Math.round(raw / 3)), `${raw} became ${taxed}`);
+});
+
+test('the house spends a charge rather than lose its turn', () => {
+  // the computer is on the bar with every entry blocked
+  G.run.cleared = 4;                     // doubles, second roll, blot levy, loaded pip
+  app.newGame({ side: R.WHITE });
+  G.mode = 'ai';
+  const ai = R.other(G.human);
+  G.state.turn = ai;
+  G.state.points = G.state.points.map(() => ({ owner: null, count: 0 }));
+  G.state.bar = [0, 0];
+  G.state.bar[ai] = 1;
+  const block = (p, owner) => { G.state.points[p - 1] = { owner, count: 2 }; };
+
+  block(1, R.other(ai));                 // a 1 cannot enter
+  G.state.dice = [{ v: 1, used: false }, { v: 1, used: false }];
+  app.newGame;                            // no-op, keeps the lint honest about globals
+  // rebuild through syncOptions via a public entry point
+  G.phase = 'move';
+  G.options = [];
+  assert.equal(app.houseRescue(), true, 'the house rescues itself');
+  assert.equal(G.houseUsed.loadedPip, true, 'and spends the loaded pip');
+  assert.ok(G.options.length > 0, 'the nudged die gives it a move');
+  assert.equal(G.state.dice.some((d) => d.v === 2), true, 'a die went up by one');
+});
+
+test('with every entry blocked the house keeps its charge', () => {
+  G.run.cleared = 4;
+  app.newGame({ side: R.WHITE });
+  G.mode = 'ai';
+  const ai = R.other(G.human);
+  G.state.turn = ai;
+  G.state.points = G.state.points.map(() => ({ owner: null, count: 0 }));
+  G.state.bar = [0, 0];
+  G.state.bar[ai] = 1;
+  for (let p = 1; p <= 6; p++) G.state.points[p - 1] = { owner: R.other(ai), count: 2 };
+  G.state.dice = [{ v: 1, used: false }, { v: 2, used: false }];
+  G.phase = 'move';
+  G.options = [];
+  G.houseUsed = { secondRoll: true, loadedPip: false };   // the reroll is already gone
+  assert.equal(app.houseRescue(), false, 'nothing helps');
+  assert.equal(G.houseUsed.loadedPip, false, 'the pip is not thrown away');
+  assert.deepEqual(G.state.dice.map((d) => d.v), [1, 2], 'dice untouched');
+});
+
+test('with a second roll the house takes the dice again', () => {
+  G.run.cleared = 2;                      // doubles tax and second roll only
+  app.newGame({ side: R.WHITE });
+  G.mode = 'ai';
+  const ai = R.other(G.human);
+  G.state.turn = ai;
+  G.state.points = G.state.points.map(() => ({ owner: null, count: 0 }));
+  G.state.bar = [0, 0];
+  G.state.bar[ai] = 1;
+  for (let p = 1; p <= 6; p++) G.state.points[p - 1] = { owner: R.other(ai), count: 2 };
+  G.state.dice = [{ v: 1, used: false }, { v: 2, used: false }];
+  G.phase = 'move';
+  G.options = [];
+  assert.equal(app.houseRescue(), true);
+  assert.equal(G.houseUsed.secondRoll, true, 'the charge is spent');
+  assert.ok(G.roll, 'and the dice are rolling again');
+  assert.ok(G.state.dice.length >= 2, 'with fresh dice');
+  dom.step(16, 120);                     // let that roll finish
+  G.options = [];
+  assert.equal(app.houseRescue(), false, 'with the charge gone it cannot rescue again');
+});
+
 console.log(`\n${passed} checks passed.\n`);
