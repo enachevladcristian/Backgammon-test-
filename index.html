@@ -22,6 +22,14 @@
       <span class="brand-name">Backgammon</span>
     </div>
 
+    <div class="stake-chip" id="stakeChip" title="Every move banks points — clear the stake before the computer wins the game">
+      <div class="stake-row">
+        <span class="stake-name" id="stakeName">Stake I</span>
+        <span class="stake-val"><b id="stakeScore">0</b><i>/</i><span id="stakeTarget">500</span></span>
+      </div>
+      <div class="stake-bar"><i id="stakeFill"></i></div>
+    </div>
+
     <div class="turn-chip" id="turnChip">
       <span class="dot white" id="turnDot"></span>
       <span class="turn-lines">
@@ -58,6 +66,8 @@
     <div class="dice-row" id="diceRow"></div>
     <button class="roll-btn" id="rollBtn"><span id="rollLabel">Roll dice</span></button>
   </div>
+
+  <div class="floaters" id="floaters" aria-hidden="true"></div>
 
   <div class="toast" id="toast" role="status"></div>
 

@@ -46,6 +46,25 @@ project directory are clamped, so it is safe to expose on a preview URL.
 - **Undo** your moves during your own turn, hit `Esc` to deselect. Sound can be
   muted with the ♪ button.
 
+## The run (a tiny roguelike)
+
+Every checker **you** move banks points, and they go into a stake you are trying
+to clear before the computer wins the game.
+
+- **Base: 20 points** for any move.
+- **Speed bonus or penalty:** the move is scored on how much race it takes off
+  your clock. Race is measured at the classic 8.5 pips per roll, plus two and a
+  half rolls for every checker still on the bar. A move that gains six pips
+  scores about +10; one that gains one pip scores about +2; giving ground costs.
+- **Tactics:** hitting a blot +12, making a point +9, bearing off +8, coming in
+  from the bar +5, and −7 for every blot you leave.
+
+The stake is 500 points at stake I, then 1000, 1600, 2400, 3400, 4600, and keeps
+climbing. Clear one and the next is bigger; winning pays a bonus on top (150 for
+a single, 300 for a gammon, 450 for a backgammon). Lose a game before the stake
+is clear and the run drops back to stake I. Each move's points float up over the
+board, and the chip in the corner shows `score / stake` with a progress bar.
+
 ## Rules implemented
 
 - Standard starting position (167 pips), direction of play, no two-sided points.
@@ -74,6 +93,7 @@ borne off. It plays a solid game and never makes an illegal move.
 | `js/rules.js` | position, legal moves, hits, bear-off, turn-optimality search |
 | `js/ai.js` | computer opponent (full-turn search + heuristic) |
 | `js/scene.js` | perspective camera, board geometry, 3D checkers and dice |
+| `js/score.js` | the run: per-move scoring, stakes, win bonuses (pure) |
 | `js/app.js` | game flow, input, animation, UI, synthesised sound |
 | `server.js` | tiny dependency-free static server |
 
@@ -92,6 +112,11 @@ npm test
   the invariants (checker counts, no negative stacks, games terminate).
 - `test/ai.test.js` — the AI's moves are always legal, it finds hits, it answers
   in a few milliseconds, and it plays 40 full games against itself.
+- `test/score.test.js` — the run's maths: the 20-point base, speed bonus vs
+  penalty, hit/point/off/blot values, the rating dropping as you close the race,
+  and the stake escalation.
 - `test/app.test.js` — boots the real app against a mock DOM/canvas, rolls,
   clicks projected board positions and moves checkers, so the renderer and game
-  flow are exercised end to end in Node.
+  flow are exercised end to end in Node — including banking points, clearing a
+  stake and the computer earning you nothing.
+- `test/server.test.js` — the static server serves the app and nothing else.

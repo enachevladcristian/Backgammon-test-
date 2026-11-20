@@ -235,4 +235,59 @@ test('an explicit side pins the draw, the pip card tags it', () => {
   console.log(`  ok  ${name}`);
 }
 
+function playOneMove() {
+  dom.el('rollBtn').dispatch('click', {});
+  dom.step(16, 80);
+  const opt = G.options.find((o) => typeof o.from === 'number') || G.options[0];
+  clickAt(opt.from === R.BAR ? 0 : opt.from);
+  dom.step(16, 2);
+  clickAt(opt.to);
+  dom.step(16, 30);
+  return opt;
+}
+
+test('a move banks points into the stake', () => {
+  app.newGame({ side: R.WHITE });
+  dom.step(16, 2);
+  assert.equal(G.run.score, 0, 'a fresh attempt starts at zero');
+  const before = dom.el('floaters').children.length;
+  playOneMove();
+  assert.ok(G.run.score > 0, 'the move banked points');
+  assert.equal(dom.el('stakeScore').textContent, G.run.score, 'HUD shows the score');
+  assert.equal(dom.el('stakeTarget').textContent, G.run.target, 'HUD shows the stake');
+  assert.equal(dom.el('stakeFill').style.width, `${((G.run.score / G.run.target) * 100).toFixed(1)}%`);
+  assert.ok(dom.el('floaters').children.length > before, 'a score badge floated up');
+});
+
+test('filling the stake clears it and raises the level', () => {
+  app.newGame({ side: R.WHITE });
+  G.run.score = G.run.target - 1;      // one move from clearing
+  dom.step(16, 2);
+  playOneMove();
+  assert.equal(G.run.level, 2, 'stake I cleared');
+  assert.equal(G.run.target, 1000, 'the next stake is bigger');
+  assert.equal(G.run.score, 0, 'and you start again from zero');
+  assert.equal(dom.el('stakeName').textContent, 'Stake II');
+});
+
+// needs the real clock: the computer thinks on setTimeout, and its checker only
+// lands when the fake rAF clock is stepped
+{
+  const name = 'the computer does not bank points for you';
+  app.newGame({ side: R.BLACK });      // computer is White and opens
+  await new Promise((r) => setTimeout(r, 830));
+  const score = G.run.score;
+  for (let i = 0; i < 80; i++) {
+    dom.step(16, 4);
+    await new Promise((r) => setTimeout(r, 6));
+  }
+  assert.ok(R.pipCount(G.state, R.WHITE) < 167, 'the computer did move');
+  assert.equal(G.run.score, score, 'its move earned you nothing');
+  app.newGame({ side: R.WHITE });
+  dom.step(16, 2);
+  passed++;
+  console.log(`  ok  ${name}`);
+}
+
+
 console.log(`\n${passed} checks passed.\n`);

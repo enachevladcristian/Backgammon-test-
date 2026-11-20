@@ -8,6 +8,7 @@ import {
   qAxisAngle, qSlerp, qMul, qNorm, qFaceUp, faceNormalForValue,
 } from './scene.js';
 import { bestTurn } from './ai.js';
+import { BASE_POINTS, rateMove, moveLabel, stakeTarget, stakeName, gameBonus } from './score.js';
 
 const TAU = Math.PI * 2;
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -37,6 +38,12 @@ const el = {
   overlaySub: document.getElementById('overlaySub'),
   overlayBtn: document.getElementById('overlayBtn'),
   hint: document.getElementById('hint'),
+  stakeChip: document.getElementById('stakeChip'),
+  stakeName: document.getElementById('stakeName'),
+  stakeScore: document.getElementById('stakeScore'),
+  stakeTarget: document.getElementById('stakeTarget'),
+  stakeFill: document.getElementById('stakeFill'),
+  floaters: document.getElementById('floaters'),
 };
 
 const G = {
@@ -56,6 +63,7 @@ const G = {
   sound: true,
   seq: 0,
   lastRoll: [0, 0],
+  run: { level: 1, score: 0, target: stakeTarget(1), cleared: 0, lost: false },
 };
 
 const isHuman = () => G.mode === 'human' || G.state.turn === G.human;
@@ -167,6 +175,8 @@ function newGame(opts = {}) {
   G.diceQuats = [null, null];
   G.undo = [];
   G.hover = null;
+  G.run.score = 0;
+  G.run.lost = false;
   const asked = opts.side === R.WHITE || opts.side === R.BLACK ? opts.side : null;
   G.human = asked === null ? drawSide() : asked;
   hideOverlay();
@@ -179,6 +189,68 @@ function newGame(opts = {}) {
 function announceSide() {
   if (G.mode !== 'ai') return;
   toast(`You play ${R.nameOf(G.human)}`, 2400);
+}
+
+/* ------------------------------------------------------------- the run */
+
+/** moves you make bank points; the computer's do not */
+const scoresFor = (player) => G.mode === 'human' || player === G.human;
+
+function floatPoints(tag, at) {
+  if (!at || !el.floaters) return;
+  const s = renderer.cam.project(at.x, at.y, 0.24);
+  const d = document.createElement('div');
+  d.className = `floater${tag.total <= BASE_POINTS - 8 ? ' bad' : ''}`;
+  const label = moveLabel(tag);
+  d.innerHTML = `<b>+${tag.total}</b>${label ? `<span>${label}</span>` : ''}`;
+  d.style.left = `${s.x.toFixed(1)}px`;
+  d.style.top = `${s.y.toFixed(1)}px`;
+  el.floaters.appendChild(d);
+  const drop = () => {
+    if (typeof d.remove === 'function') d.remove();
+    else if (el.floaters) el.floaters.removeChild(d);
+  };
+  setTimeout(drop, 1100);
+}
+
+function awardMove(before, after, player, at) {
+  if (!scoresFor(player)) return null;
+  const tag = rateMove(before, after, player);
+  G.run.score += tag.total;
+  floatPoints(tag, at);
+  if (G.run.score >= G.run.target) clearStake();
+  else updateStake();
+  return tag;
+}
+
+function clearStake() {
+  const cleared = stakeName(G.run.level);
+  G.run.level += 1;
+  G.run.score = 0;
+  G.run.target = stakeTarget(G.run.level);
+  G.run.cleared += 1;
+  sfx('win');
+  toast(`${cleared} cleared`, 2200);
+  updateStake();
+}
+
+function loseStake() {
+  G.run.level = 1;
+  G.run.score = 0;
+  G.run.target = stakeTarget(1);
+  G.run.lost = true;
+  updateStake();
+}
+
+function updateStake() {
+  const run = G.run;
+  el.stakeName.textContent = stakeName(run.level);
+  el.stakeScore.textContent = run.score;
+  el.stakeTarget.textContent = run.target;
+  const pct = Math.max(0, Math.min(100, (run.score / run.target) * 100));
+  if (el.stakeFill.style) el.stakeFill.style.width = `${pct.toFixed(1)}%`;
+  el.stakeChip.classList.toggle('ready', pct >= 75);
+  el.stakeChip.title = `${stakeName(run.level)}: bank ${run.target - run.score} more points to clear it`;
 }
 
 function rollDice() {
@@ -336,6 +408,8 @@ function completeFlight() {
     toast(`${R.nameOf(f.owner)} hit a blot!`, 1300);
   }
 
+  awardMove(before, st, f.owner, f.to);
+
   syncOptions();
   // keep the bar selected while there are still checkers to bring in
   if (st.bar[f.owner] > 0 && G.options.some((o) => o.from === R.BAR)) G.sel = { kind: 'bar' };
@@ -373,7 +447,22 @@ function endGame(winner) {
   if (G.mode === 'ai') {
     const youWon = winner === G.human;
     el.overlayTitle.textContent = youWon ? 'You win' : 'Computer wins';
-    el.overlaySub.textContent = `${R.nameOf(winner)} takes it. ${score} You played ${R.nameOf(G.human)}.`;
+    let runLine;
+    if (youWon) {
+      const bonus = gameBonus(kind);
+      G.run.score += bonus;
+      const cleared = G.run.score >= G.run.target;
+      if (cleared) clearStake();
+      else updateStake();
+      runLine = cleared
+        ? ` +${bonus} for the win clears ${stakeName(G.run.level - 1)}.`
+        : ` +${bonus} for the win — ${Math.max(0, G.run.target - G.run.score)} short of ${stakeName(G.run.level)}.`;
+    } else {
+      const stake = stakeName(G.run.level);
+      loseStake();
+      runLine = ` ${stake} lost — the run is back to stake I.`;
+    }
+    el.overlaySub.textContent = `${R.nameOf(winner)} takes it. ${score} You played ${R.nameOf(G.human)}.${runLine}`;
   } else {
     el.overlayTitle.textContent = `${R.nameOf(winner)} wins`;
     el.overlaySub.textContent = score;
@@ -621,6 +710,8 @@ function updateUI() {
   el.pipW.parentElement.classList.toggle('you', G.mode === 'ai' && G.human === R.WHITE);
   el.pipB.parentElement.classList.toggle('you', G.mode === 'ai' && G.human === R.BLACK);
 
+  updateStake();
+
   el.undoBtn.disabled = !(G.undo.length > 0 && isHuman() && !G.busy && G.phase === 'move');
   el.modeBtn.textContent = G.mode === 'ai' ? 'vs Computer' : 'Two players';
   el.modeBtn.classList.toggle('on', G.mode === 'ai');
@@ -745,4 +836,4 @@ newGame();          // first game also draws a side
 requestAnimationFrame(frame);
 
 // handy for debugging from the console
-window.__bg = { G, R, renderer, newGame, rollDice, drawSide };
+window.__bg = { G, R, renderer, newGame, rollDice, drawSide, updateStake };
