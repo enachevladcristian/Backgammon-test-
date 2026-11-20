@@ -1,12 +1,16 @@
-# Backgammon — 2.5D
+# Backgammon — 3D
 
 A complete backgammon game that runs in the browser. No dependencies, no build
 step: plain ES modules, a hand-rolled 3D projection and the Canvas 2D API.
 
-The board is drawn in perspective ("2.5D"): checkers are real cylinders with
-side walls, highlights and drop shadows, and the dice are **actual cubes** whose
-pips sit on the faces — they tumble through quaternion-space while rolling and
-land on the number you rolled.
+The board is a solid slab in perspective: every face is flat-shaded from one
+light direction, the timber has a chamfered edge and the play field sits
+recessed inside it. Nothing is glossy — the surfaces are matte, and a fine grain
+is laid over every colour so the board, the points and the checkers all read as
+material rather than flat vector fills. Checkers are real cylinders with side
+walls and contact shadows, and the dice are **actual cubes** whose pips sit on
+the faces — they tumble through quaternion-space while rolling and land on the
+number you rolled.
 
 The layout follows the reference diagram: two framed panels side by side on a
 pale peach field, the outer boards on the left and each player's home board on

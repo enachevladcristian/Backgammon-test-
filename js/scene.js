@@ -1,11 +1,13 @@
 /* ------------------------------------------------------------------
-   Pseudo-3D scene renderer for the backgammon board.
+   3D scene renderer for the backgammon board.
 
-   Everything is drawn with the 2D canvas API, but all geometry lives
-   in 3D space and is projected through a perspective camera that looks
-   down on the board at an angle ("2.5D"). Checkers are real cylinders
-   (silhouette + top face) and the dice are real cubes with pips on the
-   faces, so they tumble convincingly while being rolled.
+   Everything is drawn with the 2D canvas API, but all geometry lives in
+   3D space and is projected through a perspective camera that looks down
+   on the board at an angle. Each face is flat-shaded from a single light
+   direction, checker side walls are shaded top-to-bottom, and the dice are
+   real cubes with pips on the faces. Surfaces are matte throughout — no
+   specular highlights — and a tiled grain pattern is laid over every board
+   colour so nothing reads as a flat vector fill.
    ------------------------------------------------------------------ */
 
 const TAU = Math.PI * 2;
@@ -18,7 +20,7 @@ export const BOARD = {
   FELT_X0: -7.0, FELT_X1: 8.35,
   FELT_Y0: -4.45, FELT_Y1: 4.45,
   RAIL: 0.62,
-  THICK: 0.95,
+  THICK: 1.25,
   TRAY_X0: 6.82, TRAY_X1: 8.25,
   R: 0.42,          // checker radius
   CH: 0.2,          // checker thickness
@@ -41,24 +43,49 @@ export const DICE_REST = [
 const POINT_GAP = 0.95;  // how far a point's tip stops short of the middle
 
 const COL = {
-  woodHi: '#dda06a',
-  wood: '#c8824b',
-  woodLo: '#9a5c2b',
-  woodDeep: '#5d3413',
-  feltHi: '#ffdcb4',
-  felt: '#ffcc99',
-  feltLo: '#f0b47e',
-  pointA: '#f9e9ae',
-  pointALo: '#e6d287',
-  pointB: '#8fb87f',
-  pointBLo: '#6b9a5c',
+  wood: '#b8783f',      // board timber, flat shaded per face
+  field: '#f4cba3',     // the field: matte peach
+  tray: 'rgba(46,26,10,0.78)',
+  pointA: '#fdf4de',    // cream points
+  pointB: '#7ba169',    // sage points
   gold: '#d8b26a',
   ivory: '#f3ead7',
-  ivoryDark: '#c9b998',
   ebony: '#2b2a32',
-  ebonyDark: '#15141a',
-  ebonyHi: '#4d4b58',
 };
+
+/** multiply a #rrggbb by k (k > 1 brightens), clamped */
+function tint(hex, k) {
+  const n = parseInt(hex.slice(1), 16);
+  const ch = (v) => Math.max(0, Math.min(255, Math.round(v * k)));
+  return `rgb(${ch((n >> 16) & 255)},${ch((n >> 8) & 255)},${ch(n & 255)})`;
+}
+
+/** how much light a face with this normal catches, 0..1 */
+function lit(nx, ny, nz) {
+  return Math.max(0, Math.min(1, nx * LIGHT_DIR[0] + ny * LIGHT_DIR[1] + nz * LIGHT_DIR[2]));
+}
+
+/** flat tone for a face: matte, nothing goes fully black */
+function faceTone(nx, ny, nz) {
+  return 0.54 + 0.46 * lit(nx, ny, nz);
+}
+
+/** one tile of grain, built once and repeated as a pattern */
+function buildNoiseTile(size = 128, dots = 1500) {
+  const c = document.createElement('canvas');
+  c.width = size;
+  c.height = size;
+  const n = c.getContext('2d');
+  n.clearRect(0, 0, size, size);
+  for (let i = 0; i < dots; i++) {
+    const dark = Math.random() < 0.55;
+    const a = 0.03 + Math.random() * 0.075;
+    n.fillStyle = dark ? `rgba(46,26,8,${a})` : `rgba(255,246,226,${a * 0.75})`;
+    const w = Math.random() < 0.82 ? 1 : 2;
+    n.fillRect(Math.random() * size, Math.random() * size, w, w);
+  }
+  return c;
+}
 
 const LIGHT_DIR = (() => {
   const v = [-0.45, -0.55, 0.9];
@@ -430,6 +457,7 @@ export class Renderer {
     this.drawSeam(ctx);
     this.drawBar(ctx);
     this.drawLabels(ctx);
+    this.drawNoise(ctx);
     this.dirty = false;
   }
 
@@ -468,24 +496,18 @@ export class Renderer {
       [b.OUT_X0, b.OUT_Y1],
     ];
 
-    // ---- soft contact shadow on the table (layered, no blur filter needed)
+    // ---- contact shadow: many thin layers, so it fades instead of banding
     const mx = (b.OUT_X0 + b.OUT_X1) / 2;
-    for (let i = 0; i < 5; i++) {
-      const k = 1 + i * 0.052;
-      const off = 0.16 + i * 0.2;
-      const pts = outer.map(([x, y]) => this.p(mx + (x - mx) * k, y * k - off, -T));
+    for (let i = 7; i >= 1; i--) {
+      const k = 1 + i * 0.065;
+      const pts = outer.map(([x, y]) => this.p(mx + (x - mx) * k, y * k - 0.16 - i * 0.11, -T - 0.02));
       trace(ctx, pts);
-      ctx.fillStyle = `rgba(0,0,0,${0.15 - i * 0.024})`;
+      ctx.fillStyle = `rgba(0,0,0,${0.075 - i * 0.007})`;
       ctx.fill();
     }
 
-    // ---- sides
-    const shades = [
-      ['#b0763f', '#6b4423'], // front (nearest)
-      ['#82562e', '#4a2c12'], // right
-      ['#5e3a1c', '#33190a'], // back
-      ['#82562e', '#4a2c12'], // left
-    ];
+    // ---- side faces: one flat tone per face, from the light direction
+    const normals = [[0, -1, 0], [1, 0, 0], [0, 1, 0], [-1, 0, 0]];
     for (let i = 0; i < 4; i++) {
       const a = outer[i];
       const c = outer[(i + 1) % 4];
@@ -495,119 +517,95 @@ export class Renderer {
         this.p(c[0], c[1], -T),
         this.p(a[0], a[1], -T),
       ];
-      const bb = bbox(pts);
-      const g = ctx.createLinearGradient(bb.x0, bb.y0, bb.x1, bb.y1);
-      g.addColorStop(0, shades[i][0]);
-      g.addColorStop(1, shades[i][1]);
+      const [nx, ny, nz] = normals[i];
       trace(ctx, pts);
-      ctx.fillStyle = g;
+      ctx.fillStyle = tint(COL.wood, faceTone(nx, ny, nz) * 0.8);
       ctx.fill();
-    }
 
-    // ---- top face
-    const top = this.poly3(ctx, outer.map(([x, y]) => [x, y, 0]));
-    const bb = bbox(top);
-    let g = ctx.createLinearGradient(bb.x0, bb.y0, bb.x1, bb.y1);
-    g.addColorStop(0, COL.woodHi);
-    g.addColorStop(0.35, COL.wood);
-    g.addColorStop(1, COL.woodLo);
-    trace(ctx, top);
-    ctx.fillStyle = g;
-    ctx.fill();
+      // ambient darkening toward the bottom of the slab
+      ctx.save();
+      trace(ctx, pts);
+      ctx.clip();
+      const bb = bbox(pts);
+      const g = ctx.createLinearGradient(bb.x0, bb.y0, bb.x0, bb.y1);
+      g.addColorStop(0, 'rgba(0,0,0,0)');
+      g.addColorStop(1, 'rgba(0,0,0,0.46)');
+      ctx.fillStyle = g;
+      ctx.fillRect(bb.x0, bb.y0, bb.x1 - bb.x0, bb.y1 - bb.y0);
+      ctx.restore();
 
-    // grain: a few soft streaks following the long axis
-    ctx.save();
-    trace(ctx, top);
-    ctx.clip();
-    ctx.globalAlpha = 0.06;
-    ctx.strokeStyle = '#4a2a10';
-    ctx.lineWidth = 1;
-    for (let i = 0; i < 22; i++) {
-      const y = b.OUT_Y0 + 0.35 + (i / 22) * (b.OUT_Y1 - b.OUT_Y0 - 0.7);
-      const a = this.p(b.OUT_X0 - 0.3, y + Math.sin(i * 1.7) * 0.06, 0);
-      const c = this.p(b.OUT_X1 + 0.3, y + Math.cos(i * 2.3) * 0.06, 0);
-      ctx.beginPath();
-      ctx.moveTo(a.x, a.y);
-      ctx.lineTo(c.x, c.y);
+      trace(ctx, pts);
+      ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+      ctx.lineWidth = 1;
       ctx.stroke();
     }
-    ctx.restore();
 
-    // bevel highlight along the top-left rail
-    const hl = this.poly3(ctx, [
-      [b.OUT_X0, b.OUT_Y1, 0],
-      [b.OUT_X1, b.OUT_Y1, 0],
-      [b.OUT_X1 - 0.14, b.OUT_Y1 - 0.14, 0],
-      [b.OUT_X0 + 0.14, b.OUT_Y1 - 0.14, 0],
-    ]);
-    trace(ctx, hl);
-    ctx.fillStyle = 'rgba(255,225,180,0.10)';
+    // ---- top face: flat tone, plus a chamfer ring so the edge reads as cut
+    const topPts = this.poly3(ctx, outer.map(([x, y]) => [x, y, 0]));
+    trace(ctx, topPts);
+    ctx.fillStyle = tint(COL.wood, faceTone(0, 0, 1));
     ctx.fill();
 
-    // outer edge line
-    trace(ctx, top);
+    const bevel = 0.085;
+    const inner = this.poly3(ctx, [
+      [b.OUT_X0 + bevel, b.OUT_Y0 + bevel, 0],
+      [b.OUT_X1 - bevel, b.OUT_Y0 + bevel, 0],
+      [b.OUT_X1 - bevel, b.OUT_Y1 - bevel, 0],
+      [b.OUT_X0 + bevel, b.OUT_Y1 - bevel, 0],
+    ]);
+    ctx.beginPath();
+    topPts.forEach((pt, i) => (i ? ctx.lineTo(pt.x, pt.y) : ctx.moveTo(pt.x, pt.y)));
+    ctx.closePath();
+    inner.forEach((pt, i) => (i ? ctx.lineTo(pt.x, pt.y) : ctx.moveTo(pt.x, pt.y)));
+    ctx.closePath();
+    ctx.fillStyle = tint(COL.wood, faceTone(0, 0, 1) * 0.93);
+    ctx.fill('evenodd');
+
+    trace(ctx, topPts);
     ctx.strokeStyle = 'rgba(0,0,0,0.5)';
     ctx.lineWidth = 1.4;
+    ctx.stroke();
+    trace(ctx, inner);
+    ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+    ctx.lineWidth = 1;
     ctx.stroke();
   }
 
   drawFelt(ctx) {
     const b = BOARD;
-    const felt = this.poly3(ctx, [
-      [b.FELT_X0, b.FELT_Y0, 0.004],
-      [b.FELT_X1, b.FELT_Y0, 0.004],
-      [b.FELT_X1, b.FELT_Y1, 0.004],
-      [b.FELT_X0, b.FELT_Y1, 0.004],
+    const quad = (z) => this.poly3(ctx, [
+      [b.FELT_X0, b.FELT_Y0, z],
+      [b.FELT_X1, b.FELT_Y0, z],
+      [b.FELT_X1, b.FELT_Y1, z],
+      [b.FELT_X0, b.FELT_Y1, z],
     ]);
+    const felt = quad(0.004);
     const bb = bbox(felt);
-    const g = ctx.createRadialGradient(
-      (bb.x0 + bb.x1) / 2 - bb.x0 * 0.05, (bb.y0 + bb.y1) / 2, 10,
-      (bb.x0 + bb.x1) / 2, (bb.y0 + bb.y1) / 2, Math.max(bb.x1 - bb.x0, bb.y1 - bb.y0) * 0.72,
-    );
-    g.addColorStop(0, COL.feltHi);
-    g.addColorStop(0.55, COL.felt);
-    g.addColorStop(1, COL.feltLo);
+
+    // flat matte surface: a slight fall-off toward the back, no bright centre
+    const g = ctx.createLinearGradient(bb.x0, bb.y0, bb.x0, bb.y1);
+    g.addColorStop(0, tint(COL.field, 1.03));
+    g.addColorStop(1, tint(COL.field, 0.9));
     trace(ctx, felt);
     ctx.fillStyle = g;
     ctx.fill();
 
-    // inner shadow so the felt looks recessed
+    // recessed edge: thin strokes stacked so the shading fades out
     ctx.save();
     trace(ctx, felt);
     ctx.clip();
-    const inner = this.poly3(ctx, [
-      [b.FELT_X0, b.FELT_Y0, 0.004],
-      [b.FELT_X1, b.FELT_Y0, 0.004],
-      [b.FELT_X1, b.FELT_Y1, 0.004],
-      [b.FELT_X0, b.FELT_Y1, 0.004],
-    ]);
-    // soft recessed edge: a stack of thin strokes instead of one wide one,
-    // so the shading fades out instead of ending on a hard visible edge
     const k = clamp(this.cam.focal / 90, 0.5, 2.2);
     for (let i = 1; i <= 7; i++) {
-      trace(ctx, inner);
-      ctx.strokeStyle = `rgba(94,52,16,${0.075 * (1 - (i - 1) / 8)})`;
+      trace(ctx, quad(0.004));
+      ctx.strokeStyle = `rgba(74,40,12,${0.08 * (1 - (i - 1) / 8)})`;
       ctx.lineWidth = i * 1.9 * k;
       ctx.stroke();
     }
     ctx.restore();
 
     trace(ctx, felt);
-    ctx.strokeStyle = 'rgba(84,48,16,0.55)';
+    ctx.strokeStyle = 'rgba(70,38,10,0.6)';
     ctx.lineWidth = 1.2;
-    ctx.stroke();
-
-    // gold inlay on the rail
-    const inset = 0.28;
-    const inlay = this.poly3(ctx, [
-      [b.FELT_X0 - inset, b.FELT_Y0 - inset, 0],
-      [b.FELT_X1 + inset, b.FELT_Y0 - inset, 0],
-      [b.FELT_X1 + inset, b.FELT_Y1 + inset, 0],
-      [b.FELT_X0 - inset, b.FELT_Y1 + inset, 0],
-    ]);
-    trace(ctx, inlay);
-    ctx.strokeStyle = 'rgba(216,178,106,0.22)';
-    ctx.lineWidth = 1;
     ctx.stroke();
   }
 
@@ -625,23 +623,24 @@ export class Renderer {
     for (const [ya, yb] of wells) {
       const pts = this.poly3(ctx, [[x0, ya, z], [x1, ya, z], [x1, yb, z], [x0, yb, z]]);
       trace(ctx, pts);
-      ctx.fillStyle = 'rgba(58,30,10,0.70)';
+      ctx.fillStyle = COL.tray;
       ctx.fill();
 
-      // recessed inner shadow
+      // recessed edge
       ctx.save();
       trace(ctx, pts);
       ctx.clip();
-      trace(ctx, pts);
-      ctx.strokeStyle = 'rgba(0,0,0,0.55)';
-      ctx.lineWidth = 7;
-      ctx.stroke();
+      for (let i = 1; i <= 4; i++) {
+        trace(ctx, pts);
+        ctx.strokeStyle = `rgba(0,0,0,${0.16 - i * 0.02})`;
+        ctx.lineWidth = i * 3;
+        ctx.stroke();
+      }
       ctx.restore();
 
-      // gold rim
       trace(ctx, pts);
-      ctx.strokeStyle = 'rgba(216,178,106,0.26)';
-      ctx.lineWidth = 1;
+      ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+      ctx.lineWidth = 1.2;
       ctx.stroke();
     }
   }
@@ -665,15 +664,9 @@ export class Renderer {
         [xb - dx, y1 - dy, 0.005],
         [xa + dx, y1 - dy, 0.005],
       ]);
-      // warm shadow line marking the panel edge
       trace(ctx, rect(0, 0));
-      ctx.strokeStyle = 'rgba(80,44,12,0.30)';
+      ctx.strokeStyle = 'rgba(78,42,12,0.34)';
       ctx.lineWidth = 2;
-      ctx.stroke();
-      // light bevel just inside it
-      trace(ctx, rect(0.05, 0.05));
-      ctx.strokeStyle = 'rgba(255,246,224,0.30)';
-      ctx.lineWidth = 1;
       ctx.stroke();
     }
 
@@ -688,7 +681,7 @@ export class Renderer {
           [c, b.FELT_Y1 - 0.16, 0.0048], [a, b.FELT_Y1 - 0.16, 0.0048],
         ]);
         trace(ctx, band);
-        ctx.fillStyle = `rgba(70,38,10,${0.13 - i * 0.035})`;
+        ctx.fillStyle = `rgba(70,38,10,${0.14 - i * 0.04})`;
         ctx.fill();
       }
     }
@@ -710,28 +703,17 @@ export class Renderer {
       const tri = this.poly3(ctx, [[x0, baseY, z], [x1, baseY, z], [xc, apexY, z]]);
       const isB = colIndex(p) % 2 === 1;
       const base = isB ? COL.pointB : COL.pointA;
-      const lo = isB ? COL.pointBLo : COL.pointALo;
       const gBase = this.p(xc, baseY, z);
       const gApex = this.p(xc, apexY, z);
       const g = ctx.createLinearGradient(gBase.x, gBase.y, gApex.x, gApex.y);
-      g.addColorStop(0, base);
-      g.addColorStop(1, lo);
+      g.addColorStop(0, tint(base, 1));
+      g.addColorStop(1, tint(base, 0.87));
       trace(ctx, tri);
       ctx.fillStyle = g;
       ctx.fill();
-      ctx.strokeStyle = isB ? 'rgba(52,78,42,0.34)' : 'rgba(120,98,44,0.26)';
+      ctx.strokeStyle = isB ? 'rgba(44,68,36,0.4)' : 'rgba(112,92,44,0.32)';
       ctx.lineWidth = 0.9;
       ctx.stroke();
-
-      // subtle specular sheen on the left flank
-      const sheen = this.poly3(ctx, [
-        [x0 + 0.02, baseY, z],
-        [xc - 0.06, apexY, z],
-        [x0 + 0.2, baseY, z],
-      ]);
-      trace(ctx, sheen);
-      ctx.fillStyle = 'rgba(255,255,255,0.10)';
-      ctx.fill();
     }
   }
 
@@ -743,7 +725,7 @@ export class Renderer {
     const y0 = b.OUT_Y0;
     const y1 = b.OUT_Y1;
 
-    // soft shadow the raised bar casts on the felt on both sides
+    // shadow the raised bar casts into the channel on both sides
     for (const side of [-1, 1]) {
       const edge = side < 0 ? x0 : x1;
       for (let i = 0; i < 3; i++) {
@@ -754,52 +736,77 @@ export class Renderer {
           [c, b.FELT_Y1, 0.006], [a, b.FELT_Y1, 0.006],
         ]);
         trace(ctx, band);
-        ctx.fillStyle = `rgba(70,38,10,${0.26 - i * 0.075})`;
+        ctx.fillStyle = `rgba(70,38,10,${0.24 - i * 0.07})`;
         ctx.fill();
       }
     }
 
-    // the two long side faces
-    for (const [x, col] of [[x0, '#8a5228'], [x1, '#9a5f31']]) {
+    // long side faces, flat shaded
+    for (const [x, nx] of [[x0, -1], [x1, 1]]) {
       const face = this.poly3(ctx, [[x, y0, zt], [x, y1, zt], [x, y1, 0.008], [x, y0, 0.008]]);
       trace(ctx, face);
-      ctx.fillStyle = col;
+      ctx.fillStyle = tint(COL.wood, faceTone(nx, 0, 0) * 0.95);
       ctx.fill();
+      ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
     }
 
     // near end face
     const front = this.poly3(ctx, [[x0, y0, zt], [x1, y0, zt], [x1, y0, 0.008], [x0, y0, 0.008]]);
-    let bb = bbox(front);
-    let g = ctx.createLinearGradient(bb.x0, bb.y0, bb.x0, bb.y1);
-    g.addColorStop(0, '#d99a5e');
-    g.addColorStop(0.55, '#b3743c');
-    g.addColorStop(1, '#7d4a1f');
     trace(ctx, front);
-    ctx.fillStyle = g;
+    ctx.fillStyle = tint(COL.wood, faceTone(0, -1, 0) * 0.95);
     ctx.fill();
-
-    // top face
-    const top = this.poly3(ctx, [[x0, y0, zt], [x1, y0, zt], [x1, y1, zt], [x0, y1, zt]]);
-    bb = bbox(top);
-    g = ctx.createLinearGradient(bb.x0, bb.y0, bb.x1, bb.y1);
-    g.addColorStop(0, '#eab07a');
-    g.addColorStop(0.45, '#d1904f');
-    g.addColorStop(1, '#a96b33');
-    trace(ctx, top);
-    ctx.fillStyle = g;
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(255,220,170,0.20)';
+    ctx.strokeStyle = 'rgba(0,0,0,0.4)';
     ctx.lineWidth = 1;
     ctx.stroke();
 
-    // fine centre bead so the separation reads clearly
-    const bead = this.poly3(ctx, [
-      [-0.05, y0 + 0.75, zt], [0.05, y0 + 0.75, zt],
-      [0.05, y1 - 0.75, zt], [-0.05, y1 - 0.75, zt],
-    ]);
-    trace(ctx, bead);
-    ctx.fillStyle = 'rgba(216,178,106,0.16)';
+    // top face
+    const top = this.poly3(ctx, [[x0, y0, zt], [x1, y0, zt], [x1, y1, zt], [x0, y1, zt]]);
+    trace(ctx, top);
+    ctx.fillStyle = tint(COL.wood, faceTone(0, 0, 1) * 0.99);
     ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.42)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+
+  noisePattern(ctx) {
+    if (!this._noiseTile) this._noiseTile = buildNoiseTile();
+    if (!this._noisePatterns) this._noisePatterns = new Map();
+    let pat = this._noisePatterns.get(ctx);
+    if (!pat) {
+      pat = ctx.createPattern(this._noiseTile, 'repeat');
+      this._noisePatterns.set(ctx, pat);
+    }
+    return pat;
+  }
+
+  /* a little grain over every board colour, so nothing reads as flat vector */
+  drawNoise(ctx) {
+    const pat = this.noisePattern(ctx);
+    if (!pat) return;
+    const b = BOARD;
+    const T = b.THICK;
+    const faces = [
+      [[b.OUT_X0, b.OUT_Y0, 0], [b.OUT_X1, b.OUT_Y0, 0], [b.OUT_X1, b.OUT_Y1, 0], [b.OUT_X0, b.OUT_Y1, 0]],
+      [[b.OUT_X0, b.OUT_Y0, 0], [b.OUT_X1, b.OUT_Y0, 0], [b.OUT_X1, b.OUT_Y0, -T], [b.OUT_X0, b.OUT_Y0, -T]],
+      [[b.OUT_X1, b.OUT_Y0, 0], [b.OUT_X1, b.OUT_Y1, 0], [b.OUT_X1, b.OUT_Y1, -T], [b.OUT_X1, b.OUT_Y0, -T]],
+      [[b.OUT_X0, b.OUT_Y1, 0], [b.OUT_X1, b.OUT_Y1, 0], [b.OUT_X1, b.OUT_Y1, -T], [b.OUT_X0, b.OUT_Y1, -T]],
+      [[b.OUT_X0, b.OUT_Y0, 0], [b.OUT_X0, b.OUT_Y1, 0], [b.OUT_X0, b.OUT_Y1, -T], [b.OUT_X0, b.OUT_Y0, -T]],
+      // the raised bar stands above the plane, so it needs its own patch
+      [[-b.BAR_HW, b.OUT_Y0, b.BAR_TOP], [b.BAR_HW, b.OUT_Y0, b.BAR_TOP],
+        [b.BAR_HW, b.OUT_Y1, b.BAR_TOP], [-b.BAR_HW, b.OUT_Y1, b.BAR_TOP]],
+    ];
+    for (const face of faces) {
+      ctx.save();
+      trace(ctx, this.poly3(ctx, face));
+      ctx.clip();
+      ctx.globalAlpha = 0.55;
+      ctx.fillStyle = pat;
+      ctx.fillRect(0, 0, this.w, this.h);
+      ctx.restore();
+    }
   }
 
   drawLabels(ctx) {
@@ -819,9 +826,9 @@ export class Renderer {
       ctx.rotate(ang);
       const fs = Math.max(7, 0.26 * pos.s);
       ctx.font = `600 ${fs.toFixed(1)}px ui-sans-serif, system-ui, -apple-system, sans-serif`;
-      ctx.fillStyle = 'rgba(24,13,4,0.5)';
+      ctx.fillStyle = 'rgba(28,14,4,0.62)';
       ctx.fillText(String(p), 0, 0.9);
-      ctx.fillStyle = 'rgba(246,226,178,0.55)';
+      ctx.fillStyle = 'rgba(255,243,214,0.72)';
       ctx.fillText(String(p), 0, 0);
       ctx.restore();
     }
@@ -946,58 +953,58 @@ export class Renderer {
     const bot = circlePts(cam, x, y, z, r, 30);
     const sil = hull(top.concat(bot));
     const bb = bbox(sil);
-
     const white = owner === 0;
-    const bodyHi = white ? '#fbf4e4' : '#4a4854';
-    const bodyMid = white ? '#e6d8ba' : '#2b2a32';
-    const bodyLo = white ? '#a4916e' : '#131218';
 
-    // side wall
-    const g = ctx.createLinearGradient(bb.x0, bb.y0, bb.x1, bb.y1);
-    g.addColorStop(0, white ? '#efdfc0' : '#454351');
-    g.addColorStop(0.45, white ? '#cbb894' : '#232229');
-    g.addColorStop(1, white ? '#8d7a58' : '#0f0e13');
+    // matte side wall: no speculars, just a soft top-to-bottom wall gradient
+    const g = ctx.createLinearGradient(bb.x0, bb.y0, bb.x0, bb.y1);
+    if (white) {
+      g.addColorStop(0, '#dcccaa');
+      g.addColorStop(0.55, '#bdac8c');
+      g.addColorStop(1, '#937f62');
+    } else {
+      g.addColorStop(0, '#3d3b47');
+      g.addColorStop(0.55, '#2a2931');
+      g.addColorStop(1, '#151419');
+    }
     trace(ctx, sil);
     ctx.fillStyle = g;
     ctx.fill();
-    ctx.strokeStyle = white ? 'rgba(58,42,18,0.35)' : 'rgba(0,0,0,0.55)';
+    ctx.strokeStyle = white ? 'rgba(54,38,16,0.42)' : 'rgba(0,0,0,0.6)';
     ctx.lineWidth = 1;
     ctx.stroke();
 
-    // top face
+    // top face: diffuse, lit from the upper-left, darker toward the far rim
     const cbak = cam.project(x, y, z + h);
     const rg = ctx.createRadialGradient(
-      cbak.x - r * cbak.s * 0.42, cbak.y - r * cbak.s * 0.5, r * cbak.s * 0.05,
-      cbak.x, cbak.y, r * cbak.s * 1.35,
+      cbak.x - r * cbak.s * 0.26, cbak.y + r * cbak.s * 0.22, r * cbak.s * 0.12,
+      cbak.x, cbak.y, r * cbak.s * 1.28,
     );
-    rg.addColorStop(0, bodyHi);
-    rg.addColorStop(0.55, bodyMid);
-    rg.addColorStop(1, bodyLo);
+    rg.addColorStop(0, white ? '#f7efdb' : '#454352');
+    rg.addColorStop(1, white ? '#c8b591' : '#1b1a21');
     trace(ctx, top);
     ctx.fillStyle = rg;
     ctx.fill();
-
-    // rim
-    ctx.strokeStyle = white ? 'rgba(255,250,235,0.55)' : 'rgba(150,148,170,0.35)';
+    ctx.strokeStyle = white ? 'rgba(60,42,18,0.4)' : 'rgba(0,0,0,0.5)';
     ctx.lineWidth = 1;
     ctx.stroke();
 
-    // engraved ring
-    const groove = circlePts(cam, x, y, z + h, r * 0.74, 24);
-    trace(ctx, groove);
-    ctx.strokeStyle = white ? 'rgba(120,98,62,0.30)' : 'rgba(0,0,0,0.45)';
-    ctx.lineWidth = 1.4;
-    ctx.stroke();
-    const inner = circlePts(cam, x, y, z + h, r * 0.6, 22);
-    trace(ctx, inner);
-    ctx.fillStyle = white ? 'rgba(255,255,255,0.16)' : 'rgba(255,255,255,0.05)';
-    ctx.fill();
+    // the same grain as the board, so the checkers sit in the same material
+    const pat = this.noisePattern(ctx);
+    if (pat) {
+      ctx.save();
+      ctx.globalAlpha = 0.5;
+      trace(ctx, top);
+      ctx.fillStyle = pat;
+      ctx.fill();
+      ctx.restore();
+    }
 
-    // specular
-    const hi = circlePts(cam, x - r * 0.26, y - r * 0.3, z + h, r * 0.3, 14);
-    trace(ctx, hi);
-    ctx.fillStyle = white ? 'rgba(255,255,255,0.5)' : 'rgba(190,190,215,0.22)';
-    ctx.fill();
+    // engraved ring, matte
+    const groove = circlePts(cam, x, y, z + h, r * 0.7, 24);
+    trace(ctx, groove);
+    ctx.strokeStyle = white ? 'rgba(110,90,58,0.26)' : 'rgba(0,0,0,0.42)';
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
   }
 
   drawFlight(ctx, view) {
