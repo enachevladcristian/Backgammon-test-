@@ -65,6 +65,24 @@ a single, 300 for a gammon, 450 for a backgammon). Lose a game before the stake
 is clear and the run drops back to stake I. Each move's points float up over the
 board, and the chip in the corner shows `score / stake` with a progress bar.
 
+### The shop
+
+Clear a stake and you are paid coins (45, plus 10 for a clear inside 20 moves)
+and a small shop opens — **for now only after stake I**. Spend coins on:
+
+- **Loaded dice** (30) — reroll your dice once a game, before you move. The
+  `Reroll · n` button appears in the roll panel; `R` does the same.
+- **Lucky charm** (40) — +6 points on every move for the rest of the run.
+- **Head start** (55) — every new game opens with 120 points already banked.
+
+Every item stacks. What you cannot buy is another checker: backgammon is 15 a
+side, and the pips, the bear-off and the win detection all assume it — a 16th
+checker would break the game rather than upgrade it.
+
+The shop freezes the table: no rolls, no clicks, no computer moves until you
+press **Continue**. Coins, perks and the wallet survive the run; losing sends
+you back to stake I but keeps your purchases.
+
 ## Rules implemented
 
 - Standard starting position (167 pips), direction of play, no two-sided points.
@@ -94,6 +112,7 @@ borne off. It plays a solid game and never makes an illegal move.
 | `js/ai.js` | computer opponent (full-turn search + heuristic) |
 | `js/scene.js` | perspective camera, board geometry, 3D checkers and dice |
 | `js/score.js` | the run: per-move scoring, stakes, win bonuses (pure) |
+| `js/shop.js` | the shop: items, prices, purchases, coin payout (pure) |
 | `js/app.js` | game flow, input, animation, UI, synthesised sound |
 | `server.js` | tiny dependency-free static server |
 
@@ -119,4 +138,8 @@ npm test
   clicks projected board positions and moves checkers, so the renderer and game
   flow are exercised end to end in Node — including banking points, clearing a
   stake and the computer earning you nothing.
+- `test/shop.test.js` — the catalogue, prices, purchases, coin payout, and that
+  nothing in the shop changes the number of checkers.
+- `test/app.test.js` — the shop opens when stake I clears, freezes the table,
+  sells perks that then show up in the score and the dice.
 - `test/server.test.js` — the static server serves the app and nothing else.

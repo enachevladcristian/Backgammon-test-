@@ -290,4 +290,107 @@ test('filling the stake clears it and raises the level', () => {
 }
 
 
+const shopEl = dom.el('shop');
+const buyButtons = () => dom.el('shopItems').children.map((row) => row.children[2]);
+
+/** clear stake I on the next move, so the shop opens */
+function openShopNow() {
+  app.newGame({ side: R.WHITE });     // also closes any shop left open
+  dom.step(16, 2);
+  G.run.level = 1;
+  G.run.target = 500;
+  G.run.score = 499;
+  playOneMove();
+}
+
+test('clearing the first stake pays coins and opens the shop', () => {
+  G.wallet = 0;
+  openShopNow();
+  assert.equal(G.run.level, 2, 'stake I cleared');
+  assert.ok(G.wallet > 0, `paid ${G.wallet} coins`);
+  assert.equal(G.shopOpen, true);
+  assert.equal(shopEl.classList.contains('hidden'), false, 'the shop is on screen');
+  assert.equal(dom.el('shopCoins').textContent, G.wallet);
+  assert.equal(buyButtons().length, 3, 'three things to buy');
+});
+
+test('the shop freezes the table', () => {
+  const rolls = G.state.dice.length;
+  const counts = G.state.points.map((p) => p.count).join(',');
+  dom.el('rollBtn').dispatch('click', {});
+  dom.step(16, 20);
+  dom.dispatchWindow('keydown', { code: 'Space', key: ' ', preventDefault() {} });
+  dom.step(16, 20);
+  assert.equal(G.state.dice.length, rolls, 'no dice rolled');
+  assert.equal(G.state.points.map((p) => p.count).join(','), counts, 'no moves made');
+});
+
+test('buying spends coins and applies the perk', () => {
+  G.wallet = 200;
+  dom.el('shopDone').dispatch('click', {});
+  assert.equal(G.shopOpen, false, 'continue closes the shop');
+  openShopNow();
+  assert.equal(G.shopOpen, true, 'and it comes back at the next stake');
+
+  const coins = G.wallet;
+  buyButtons()[0].dispatch('click', {});        // loaded dice
+  assert.equal(G.perks.rerolls, 1, 'reroll perk granted');
+  assert.equal(G.wallet, coins - 30, 'coins deducted');
+  assert.equal(dom.el('shopCoins').textContent, G.wallet, 'wallet redrawn');
+
+  buyButtons()[1].dispatch('click', {});        // lucky charm
+  assert.equal(G.perks.moveBonus, 6, 'charm granted');
+  assert.equal(G.wallet, coins - 70);
+});
+
+test('the charm adds points to every move', () => {
+  dom.el('shopDone').dispatch('click', {});
+  app.newGame({ side: R.WHITE });
+  assert.equal(G.perks.moveBonus, 6, 'charm carries into the next game');
+  dom.step(16, 2);
+  const before = G.run.score;
+  playOneMove();
+  const gained = G.run.score - before;
+  assert.ok(gained > 12, `banked ${gained}: base 20 plus charm at least`);
+});
+
+test('head start banks points at the start of a game', () => {
+  G.perks.headstarts = 1;
+  app.newGame({ side: R.WHITE });
+  assert.equal(G.run.score, 120, 'opened with the head start');
+  G.perks.headstarts = 0;
+  app.newGame({ side: R.WHITE });
+  assert.equal(G.run.score, 0, 'and without it you start at zero');
+});
+
+test('loaded dice reroll the roll, once', () => {
+  G.perks.rerolls = 1;
+  app.newGame({ side: R.WHITE });
+  dom.step(16, 2);
+  assert.equal(dom.el('rerollBtn').classList.contains('hidden'), false, 'reroll offered');
+  dom.el('rollBtn').dispatch('click', {});
+  dom.step(16, 80);
+  assert.equal(G.phase, 'move', 'rolled');
+  assert.equal(dom.el('rerollBtn').disabled, false, 'rerollable before moving');
+  dom.el('rerollBtn').dispatch('click', {});
+  assert.equal(G.perks.rerolls, 0, 'the perk is spent');
+  dom.step(16, 80);
+  assert.equal(G.phase, 'move', 'new dice are in play');
+  assert.ok(G.state.dice.length >= 2);
+  assert.equal(dom.el('rerollBtn').disabled, true, 'nothing left to spend');
+});
+
+test('only the first stake opens a shop', () => {
+  app.newGame({ side: R.WHITE });
+  dom.step(16, 2);
+  G.run.level = 3;
+  G.run.target = 500;
+  G.run.score = 499;
+  playOneMove();
+  assert.equal(G.run.level, 4, 'stake III cleared');
+  assert.equal(G.shopOpen, false, 'no shop after a later stake yet');
+  app.newGame({ side: R.WHITE });
+  dom.step(16, 2);
+});
+
 console.log(`\n${passed} checks passed.\n`);
