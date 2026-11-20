@@ -24,7 +24,9 @@ npm start          # http://localhost:8080
 ```
 
 Any static server works too (`python3 -m http.server`), the modules just need to
-be served over http.
+be served over http. The bundled server only ever serves project files: `.git`,
+dotfiles and `node_modules` are refused, and paths that try to climb out of the
+project directory are clamped, so it is safe to expose on a preview URL.
 
 ## What you can do
 
