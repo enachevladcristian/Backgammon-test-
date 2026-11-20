@@ -8,10 +8,13 @@ import {
   qAxisAngle, qSlerp, qMul, qNorm, qFaceUp, faceNormalForValue,
 } from './scene.js';
 import { bestTurn } from './ai.js';
-import { BASE_POINTS, rateMove, moveLabel, stakeTarget, stakeName, gameBonus } from './score.js';
+import { BASE_POINTS, rateMove, moveLabel, stakeTarget, stakeName, gameBonus, openBlots } from './score.js';
 import {
   ITEMS, HEAD_START_POINTS, emptyPerks, purchase, stakeCoins, opensShop,
 } from './shop.js';
+import {
+  houseRulesFor, newestRule, hasHouseRule, taxMove,
+} from './house.js';
 
 const TAU = Math.PI * 2;
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -53,6 +56,7 @@ const el = {
   shopItems: document.getElementById('shopItems'),
   shopDone: document.getElementById('shopDone'),
   shopSub: document.getElementById('shopSub'),
+  stakeHouse: document.getElementById('stakeHouse'),
 };
 
 const G = {
@@ -80,6 +84,8 @@ const G = {
   shopOpen: false,
   shopPending: false,
   passPending: false,
+  house: [],                       // rules the computer has earned
+  houseUsed: { secondRoll: false, loadedPip: false },
 };
 
 const isHuman = () => G.mode === 'human' || G.state.turn === G.human;
@@ -196,6 +202,8 @@ function newGame(opts = {}) {
   G.movesThisStake = 0;
   G.turnMoves = 0;
   G.passPending = false;
+  G.houseUsed = { secondRoll: false, loadedPip: false };
+  refreshHouse();
   const asked = opts.side === R.WHITE || opts.side === R.BLACK ? opts.side : null;
   G.human = asked === null ? drawSide() : asked;
   hideOverlay();
@@ -241,6 +249,14 @@ function awardMove(before, after, player, at) {
     tag.bonus = G.perks.moveBonus;
     tag.total += G.perks.moveBonus;
   }
+  const roll = G.lastRoll || [];
+  const taxed = taxMove(tag.total, {
+    isDouble: roll.length === 2 && roll[0] === roll[1],
+    usedSix: roll.includes(6),
+    newBlots: Math.max(0, openBlots(after, player) - openBlots(before, player)),
+  }, G.house);
+  if (taxed.total !== tag.total) tag.taxes = taxed.taxes;
+  tag.total = taxed.total;
   G.run.score += tag.total;
   G.movesThisStake += 1;
   floatPoints(tag, at);
@@ -260,7 +276,9 @@ function clearStake() {
   G.run.cleared += 1;
   G.movesThisStake = 0;
   sfx('win');
-  toast(`${cleared} cleared · +${coins} coins`, 2400);
+  refreshHouse();
+  const gained = newestRule(G.run.cleared);
+  toast(gained ? `${cleared} cleared · +${coins} coins · house: ${gained.name}` : `${cleared} cleared · +${coins} coins`, 2800);
   updateStake();
   if (opensShop(level)) {
     G.shopPending = true;
@@ -322,6 +340,10 @@ function openShop() {
   G.shopOpen = true;
   G.shopPending = false;
   G.sel = null;
+  const gained = newestRule(G.run.cleared);
+  el.shopSub.textContent = gained
+    ? `Spend your coins — the house answers with “${gained.name}”: ${gained.blurb}`
+    : 'Spend your coins — the next stake is bigger.';
   renderShop();
   el.shop.classList.remove('hidden');
   updateUI();
@@ -367,6 +389,11 @@ function rerollNow() {
   rollDice();
 }
 
+function refreshHouse() {
+  G.house = houseRulesFor(G.run.cleared);
+  updateStake();
+}
+
 function loseStake() {
   G.run.level = 1;
   G.run.score = 0;
@@ -383,6 +410,12 @@ function updateStake() {
   const pct = Math.max(0, Math.min(100, (run.score / run.target) * 100));
   if (el.stakeFill.style) el.stakeFill.style.width = `${pct.toFixed(1)}%`;
   el.stakeChip.classList.toggle('ready', pct >= 75);
+
+  if (el.stakeHouse) {
+    const names = G.house.map((r) => r.name.toLowerCase());
+    el.stakeHouse.textContent = names.length ? `House: ${names.join(' · ')}` : '';
+    el.stakeHouse.classList.toggle('hidden', !names.length);
+  }
   el.stakeChip.title = `${stakeName(run.level)}: bank ${run.target - run.score} more points to clear it`;
 }
 
@@ -429,6 +462,7 @@ function afterRoll() {
   const st = G.state;
   if (G.phase !== 'move') return;
   if (!G.options.length) {
+    if (!isHuman() && houseRescue()) return;
     toast(`${R.nameOf(st.turn)} has no legal moves`);
     const seq = G.seq;
     G.busy = true;
@@ -443,6 +477,48 @@ function afterRoll() {
   if (st.bar[st.turn] > 0) G.sel = { kind: 'bar' };
   updateUI();
   if (!isHuman()) aiMove();
+}
+
+/* the house spends a charge rather than lose its turn */
+function houseRescue() {
+  if (G.mode !== 'ai' || isHuman()) return false;
+  const st = G.state;
+  const used = G.houseUsed || {};
+  // loaded pip: nudge the die that gives it something to play
+  if (hasHouseRule(G.house, 'loadedPip') && !used.loadedPip) {
+    for (const die of st.dice) {
+      if (die.used || die.v >= 6) continue;
+      const before = die.v;
+      die.v = before + 1;
+      syncOptions();
+      if (G.options.length) {
+        used.loadedPip = true;
+        sfx('place');
+        toast('The house loads a pip', 1500);
+        updateUI();
+        return true;
+      }
+      die.v = before;
+    }
+    syncOptions();
+  }
+  // second roll: take the dice again
+  if (hasHouseRule(G.house, 'secondRoll') && !used.secondRoll) {
+    used.secondRoll = true;
+    toast('The house rolls again', 1500);
+    rerollForAI();
+    return true;
+  }
+  return false;
+}
+
+function rerollForAI() {
+  G.state.dice = [];
+  G.phase = 'roll';
+  G.sel = null;
+  syncOptions();
+  updateUI();
+  rollDice();
 }
 
 function passTurn() {
@@ -991,4 +1067,6 @@ newGame();          // first game also draws a side
 requestAnimationFrame(frame);
 
 // handy for debugging from the console
-window.__bg = { G, R, renderer, newGame, rollDice, drawSide, updateStake };
+window.__bg = {
+  G, R, renderer, newGame, rollDice, drawSide, updateStake, houseRescue, taxMove,
+};

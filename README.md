@@ -83,6 +83,26 @@ The shop freezes the table: no rolls, no clicks, no computer moves until you
 press **Continue**. Coins, perks and the wallet survive the run; losing sends
 you back to stake I but keeps your purchases.
 
+### The house
+
+Every perk you take has an answer. Each time you clear a stake the computer
+gains one rule of its own, escalating in this order:
+
+| rule | kind | what it does |
+| --- | --- | --- |
+| Doubles tax | tax | any doubles roll: your move scores a third |
+| Second roll | power | stuck for a move? it rolls again, once a game |
+| Blot levy | tax | every blot you leave costs 7 more |
+| Loaded pip | power | stuck for a move? it nudges a die up by one, once a game |
+| Six tax | tax | any roll with a 6 in it pays 6 points |
+| The cap | tax | no single move scores more than 40 |
+
+The taxes are combinatorial — doubles, sixes, blots, the ceiling — not one
+special case for 6-6s. The powers never bend the rules: the house still makes
+legal moves, it just buys itself another roll when its dice leave it nothing to
+play. The current rules show under the stake chip, and the shop tells you which
+one just arrived. The house keeps its rules when a run collapses back to stake I.
+
 ## Rules implemented
 
 - Standard starting position (167 pips), direction of play, no two-sided points.
@@ -113,6 +133,7 @@ borne off. It plays a solid game and never makes an illegal move.
 | `js/scene.js` | perspective camera, board geometry, 3D checkers and dice |
 | `js/score.js` | the run: per-move scoring, stakes, win bonuses (pure) |
 | `js/shop.js` | the shop: items, prices, purchases, coin payout (pure) |
+| `js/house.js` | the house: its escalating rules and the taxes it applies (pure) |
 | `js/app.js` | game flow, input, animation, UI, synthesised sound |
 | `server.js` | tiny dependency-free static server |
 
@@ -140,6 +161,9 @@ npm test
   stake and the computer earning you nothing.
 - `test/shop.test.js` — the catalogue, prices, purchases, coin payout, and that
   nothing in the shop changes the number of checkers.
+- `test/house.test.js` — the house earns one rule per cleared stake, every
+  combination is taxed the same way, and the taxes never drop below 1 point.
 - `test/app.test.js` — the shop opens when stake I clears, freezes the table,
-  sells perks that then show up in the score and the dice.
+  sells perks that then show up in the score and the dice; the house taxes a
+  real doubles move to a third, and spends (or keeps) its dice charges.
 - `test/server.test.js` — the static server serves the app and nothing else.

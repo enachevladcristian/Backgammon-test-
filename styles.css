@@ -185,6 +185,17 @@ body { overscroll-behavior: none; }
 
 .btn.primary:hover { background: linear-gradient(180deg, #ffe9b6, #dfb56c); }
 
+.stake-house {
+  margin-top: 2px;
+  font-size: 9px;
+  line-height: 1.35;
+  letter-spacing: 0.04em;
+  color: rgba(240, 213, 155, 0.62);
+  max-width: 150px;
+}
+
+.stake-house.hidden { display: none; }
+
 /* ------------------------------------------------------------- the shop */
 .shop {
   position: absolute;
